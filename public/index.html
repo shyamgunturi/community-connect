@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Discover and join local communities with Community Connect." />
+  <title>Community Connect | Find your people</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#home" aria-label="Community Connect home"><span class="brand-mark">C</span><span>Community<span class="brand-light">Connect</span></span></a>
+    <nav class="top-nav" aria-label="Main navigation">
+      <a href="#home" id="homeNav" class="active">Home</a>
+      <button class="nav-button" id="eventsNav">Events</button>
+      <button class="nav-button" id="participantNav">Participant</button>
+      <button class="nav-button" id="organizerNav">Organizer</button>
+    </nav>
+    <div class="header-account" id="accountSlot"></div><button class="header-cta" id="getStartedBtn">Get started</button>
+  </header>
+
+  <main id="home">
+
+    <section class="hero hero-v2 home-section" id="heroSection">
+      <div class="hero-copy">
+        <p class="eyebrow">A PLACE FOR EVERY INTEREST</p>
+        <h1>Your people are<br><span>out there.</span></h1>
+        <p class="hero-text">From weekend runners and creative circles to coding groups and local causes — discover the communities that make life richer.</p>
+        <div class="hero-actions">
+          <button class="primary-btn" id="exploreBtn">Explore communities <span>→</span></button>
+          <button class="text-btn" id="organizerHeroBtn">I'm building a community <span>↗</span></button>
+        </div>
+        <div class="hero-proof"><span class="proof-avatars"><i>J</i><i>A</i><i>M</i><i>+</i></span><span><strong>Find connection close to home</strong><small>Discover people, places and experiences</small></span></div>
+      </div>
+      <div class="hero-gallery">
+        <div class="hero-photo hero-photo-main"><img src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1100&q=85" alt="Friends spending time together outdoors"><span class="photo-caption">Make room for new connections</span></div>
+        <div class="hero-photo hero-photo-small"><img src="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=700&q=85" alt="People collaborating around a laptop"><span class="photo-tag">Ideas bring us together</span></div>
+        <div class="floating-note"><span class="note-icon">✦</span><span><strong>Something for everyone</strong><small>Explore what moves you</small></span></div>
+      </div>
+    </section>
+
+    <section class="interest-strip home-section" aria-label="Explore interests">
+      <div class="interest-intro"><span class="eyebrow">FOLLOW YOUR CURIOSITY</span><h2>What are you into?</h2><p>Start with an interest. Find your people from there.</p></div>
+      <div class="interest-grid">
+        <button class="interest-tile" data-interest="Technology"><img src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=500&q=80" alt=""><span>Technology</span></button>
+        <button class="interest-tile" data-interest="Sports & Fitness"><img src="https://images.unsplash.com/photo-1530549387789-4c1017266635?auto=format&fit=crop&w=500&q=80" alt=""><span>Sports & fitness</span></button>
+        <button class="interest-tile" data-interest="Arts & Hobbies"><img src="https://images.unsplash.com/photo-1513364776144-60967b0f800f?auto=format&fit=crop&w=500&q=80" alt=""><span>Arts & creativity</span></button>
+        <button class="interest-tile" data-interest="Volunteering"><img src="https://images.unsplash.com/photo-1559027615-cd4628902d4a?auto=format&fit=crop&w=500&q=80" alt=""><span>Volunteering</span></button>
+        <button class="interest-tile" data-interest="Social"><img src="https://images.unsplash.com/photo-1528605248644-14dd04022da1?auto=format&fit=crop&w=500&q=80" alt=""><span>Food & social</span></button>
+        <button class="interest-tile" data-interest="Faith"><img src="https://images.unsplash.com/photo-1438232992991-995b7058bbb3?auto=format&fit=crop&w=500&q=80" alt=""><span>Faith & fellowship</span></button>
+      </div>
+    </section>
+
+    <section class="featured-section home-section" id="howItWorks">
+      <div class="section-topline"><div><p class="eyebrow">A WORLD OF LOCAL CONNECTIONS</p><h2>There’s more happening<br>around you than you think.</h2></div><button class="subtle-link" id="seeAllCommunities">See how discovery works <span>→</span></button></div>
+      <div class="featured-grid">
+        <article class="feature-card feature-wide"><img src="https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=1100&q=85" alt="A group collaborating at a community meetup"><div class="feature-shade"></div><div class="feature-copy"><span class="feature-label">LEARN TOGETHER</span><h3>Curious minds.<br>Shared ideas.</h3><p>Find tech meetups, learning circles and people who love building things.</p><button class="feature-action" data-preview="participant">Explore communities <span>→</span></button></div></article>
+        <article class="feature-card"><img src="https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=85" alt="Friends enjoying an outdoor community activity"><div class="feature-shade"></div><div class="feature-copy"><span class="feature-label">GET OUT THERE</span><h3>More than<br>a group chat.</h3><p>Turn shared interests into real experiences.</p><button class="feature-action" data-preview="participant">Find an activity <span>→</span></button></div></article>
+        <article class="feature-card"><img src="https://images.unsplash.com/photo-1531206715517-5c0ba140b2b8?auto=format&fit=crop&w=800&q=85" alt="Volunteers working together"><div class="feature-shade"></div><div class="feature-copy"><span class="feature-label">MAKE AN IMPACT</span><h3>Good things<br>grow together.</h3><p>Meet people who want to make a difference.</p><button class="feature-action" data-preview="participant">Discover causes <span>→</span></button></div></article>
+      </div>
+    </section>
+
+    <section class="home-events home-section" id="homeEvents" aria-labelledby="homeEventsTitle">
+      <div class="section-topline"><div><p class="eyebrow">HAPPENING SOON</p><h2 id="homeEventsTitle">Upcoming public events</h2></div><button class="subtle-link" id="seeAllEvents">See all events <span>→</span></button></div>
+      <div class="event-card-grid" id="homeEventGrid"><p class="muted loading-line">Loading upcoming events…</p></div>
+    </section>
+
+    <section class="story-section home-section">
+      <div class="story-image"><img src="https://images.unsplash.com/photo-1527529482837-4698179dc6ce?auto=format&fit=crop&w=1100&q=85" alt="A community gathering around a table"></div>
+      <div class="story-copy"><p class="eyebrow">THE COMMUNITY CONNECT IDEA</p><h2>Belonging shouldn't be left to chance.</h2><p>We believe everyone should have an easier way to find their people. Community Connect brings local groups, shared interests, stories and events into one welcoming place.</p><div class="story-points"><div><b>01</b><span><strong>Discover</strong><small>Explore communities by interest and distance.</small></span></div><div><b>02</b><span><strong>Connect</strong><small>See what groups are about before you join.</small></span></div><div><b>03</b><span><strong>Experience</strong><small>Join in, attend events and build real connections.</small></span></div></div></div>
+    </section>
+
+    <section class="role-section home-section">
+      <div class="section-heading"><p class="eyebrow">ONE PLATFORM, TWO WAYS TO CONNECT</p><h2>Come as you are.<br>There's a place for you.</h2><p>Explore first. Create an account only when you're ready to take part.</p></div>
+      <div class="role-cards">
+        <article class="role-card participant-card"><div class="role-photo"><img src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=900&q=80" alt="People connecting outdoors"></div><div class="role-card-body"><p class="eyebrow">FOR PARTICIPANTS</p><h3>Find your kind of people.</h3><p>Browse communities, read their stories, explore activities and see what feels right for you — before signing up.</p><button class="card-link" id="participantCardBtn">Explore as a participant <span>→</span></button></div></article>
+        <article class="role-card organizer-card"><div class="role-photo"><img src="https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=900&q=80" alt="A community organiser planning with a team"></div><div class="role-card-body"><p class="eyebrow">FOR ORGANIZERS</p><h3>Give your community a home.</h3><p>Preview the organiser space, see how your group could look and discover the tools to bring members together.</p><button class="card-link" id="organizerCardBtn">Preview organizer space <span>→</span></button></div></article>
+      </div>
+    </section>
+
+    <section class="closing-cta home-section">
+      <div><p class="eyebrow">YOUR NEXT CONNECTION COULD BE CLOSER THAN YOU THINK</p><h2>Find your people.<br>Discover your world.</h2><p>Start exploring Community Connect. No account needed to look around.</p></div>
+      <button class="primary-btn" id="closingExploreBtn">Explore Community Connect <span>→</span></button>
+    </section>
+    <section class="participant-view app-view hidden" id="participantView">
+      <div class="view-heading"><div><p class="eyebrow">DISCOVER COMMUNITIES</p><h2>Find a community near you</h2><p>Search any UK town, city or postcode, then choose how far you're happy to travel.</p></div><span class="view-pill" id="participantPill">Explore</span></div>
+      <div class="search-panel">
+        <div class="field-block location-field"><label for="locationSearch">Starting location</label><div class="location-search-row"><div class="autocomplete"><input id="locationSearch" type="search" placeholder="e.g. Middlesbrough, Leeds or TS1 3BX" autocomplete="off" spellcheck="false" /><ul class="suggestions hidden" id="locationSuggestions" role="listbox" aria-label="Location suggestions"></ul></div><button class="outline-btn" id="searchLocationBtn" type="button">Search</button></div><small>Start typing to see suggestions. Results are sorted by distance.</small><p class="location-status" id="locationStatus" aria-live="polite"></p></div>
+        <button class="outline-btn location-btn" id="useLocationBtn" type="button">◎ Use my location</button>
+        <div class="field-block distance-field"><label for="distanceRange">Maximum distance <strong id="distanceValue">10 miles</strong></label><input id="distanceRange" type="range" min="1" max="50" value="10" /><div class="range-labels"><span>1 mile</span><span>50 miles</span></div></div>
+        <div class="field-block category-field"><label for="categoryFilter">Community type</label><select id="categoryFilter"><option value="all">All categories</option><option>Technology</option><option>Sports &amp; Fitness</option><option>Social</option><option>Faith</option><option>Volunteering</option><option>Arts &amp; Hobbies</option></select></div>
+      </div>
+      <div class="results-heading"><div><h3>Communities to explore</h3><p id="resultsSummary">Showing all communities. Choose a location to filter by distance.</p></div><div class="results-actions"><button class="text-btn hidden" id="clearLocationBtn" type="button">Clear location</button><span id="communityCount" class="count-label"></span></div></div>
+      <div class="community-grid" id="communityGrid" aria-live="polite"></div>
+      <div class="empty-state hidden" id="emptyState"><span>⌖</span><h3 id="emptyTitle">No communities in this search</h3><p id="emptyText">Try increasing the distance or choosing another category.</p><button class="outline-btn hidden" id="retryCommunities" type="button">Try again</button></div>
+
+      <section class="events-section" id="eventsSection"><div class="results-heading"><div><h3>Upcoming public events</h3><p>Anyone can preview events. Join the community to register.</p></div><span id="eventCount" class="count-label"></span></div><div id="publicEvents" class="event-card-grid"><p class="muted loading-line">Loading events…</p></div></section>
+
+      <section class="joined-section dashboard-section" id="dashboardSection">
+        <div class="results-heading"><div><h3>My participant dashboard</h3><p>Your communities and event registrations, saved to your account.</p></div></div>
+        <div class="dashboard-locked hidden" id="dashboardLocked"><div><strong>Sign in to see your communities and events</strong><p>Exploring is open to everyone. Create a free participant account when you want to join a community or register for an event.</p></div><div class="dashboard-locked-actions"><button class="primary-btn" type="button" id="dashboardRegister">Create participant account</button><button class="outline-btn" type="button" id="dashboardLogin">Log in</button></div></div>
+        <div class="dashboard-grid" id="dashboardContent">
+          <div><h4 class="dash-title">Joined communities</h4><div id="joinedCommunities" class="joined-list"><p class="muted">You haven't joined a community yet.</p></div></div>
+          <div><h4 class="dash-title">My registered events</h4><div id="registeredEvents" class="event-list"><p class="muted">You haven't registered for any events yet.</p></div></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="organizer-view app-view hidden" id="organizerView">
+      <div class="view-heading"><div><p class="eyebrow">ORGANIZER SPACE</p><h2>Build and manage your community</h2><p id="organizerIntro">Take a look around. Create an organizer account when you're ready to publish and manage a community.</p></div><span class="view-pill organizer-pill">Organizer</span></div>
+      <div class="preview-stats organizer-stats hidden" id="organizerStats"></div>
+      <div class="organizer-layout">
+        <aside class="organizer-sidebar"><div class="sidebar-title">ORGANIZER MENU</div><button class="side-link selected" data-panel="createCommunityPanel" type="button">＋ Create community</button><button class="side-link" data-panel="manageCommunityPanel" type="button">▦ My communities</button><button class="side-link" data-panel="createEventPanel" type="button">＋ Publish an event</button><button class="side-link" data-panel="organizerEventsPanel" type="button">▤ My events</button><div class="sidebar-tip"><strong>Organizer tip</strong><p>Publish your community first. You can then add events that members can discover.</p></div></aside>
+        <div class="organizer-content">
+          <div class="preview-banner hidden" id="organizerPreviewBanner"><strong>Organizer workspace preview</strong><span>Explore the tools below. Create an organizer account when you're ready to publish.</span></div>
+          <section class="organizer-panel" id="createCommunityPanel"><div class="panel-heading"><h3 id="communityFormTitle">Create a community</h3><p>Give people a clear idea of what your group is about. Published communities appear in public discovery straight away.</p></div>
+            <form id="communityForm" class="form-grid" novalidate>
+              <div class="field-block"><label for="communityName">Community name *</label><input id="communityName" name="name" required maxlength="100" placeholder="e.g. Middlesbrough Tech Meetup" /></div>
+              <div class="field-block"><label for="communityCategory">Category *</label><select id="communityCategory" name="category" required><option value="">Choose a category</option><option>Technology</option><option>Sports &amp; Fitness</option><option>Social</option><option>Faith</option><option>Volunteering</option><option>Arts &amp; Hobbies</option></select></div>
+              <div class="field-block full-field"><label for="communityDescription">Short description *</label><textarea id="communityDescription" name="description" required rows="3" maxlength="500" placeholder="A short introduction to your community (at least 10 characters)"></textarea></div>
+              <div class="field-block full-field"><label for="communityStory">Community story</label><textarea id="communityStory" name="story" rows="6" maxlength="5000" placeholder="Tell visitors how your community began, its mission, activities and what makes it special."></textarea><small>This story is public so visitors can discover your community before joining.</small></div>
+              <div class="field-block"><label for="communityTown">Town / area *</label><div class="autocomplete"><input id="communityTown" name="town" required maxlength="100" placeholder="Start typing a UK town or postcode" autocomplete="off" /><ul class="suggestions hidden" id="communityTownSuggestions" role="listbox" aria-label="Town suggestions"></ul></div><small id="communityLocationStatus" class="location-status">Pick a suggestion to set the exact map position.</small></div>
+              <div class="field-block"><label for="communityAddress">Meeting location / address</label><input id="communityAddress" name="address" maxlength="200" placeholder="e.g. Teesside University" /></div>
+              <div class="field-block"><label for="communityPostcode">Postcode <span class="optional">(optional)</span></label><input id="communityPostcode" name="postcode" maxlength="9" placeholder="e.g. TS1 3BX" autocomplete="postal-code" /></div>
+              <div class="field-block coord-field"><label>Map position <span class="optional">(filled automatically)</span></label><div class="coord-row"><input id="communityLatitude" name="latitude" type="number" step="any" min="-90" max="90" placeholder="Latitude" aria-label="Latitude" /><input id="communityLongitude" name="longitude" type="number" step="any" min="-180" max="180" placeholder="Longitude" aria-label="Longitude" /></div></div>
+              <div class="field-block full-field photo-field" data-photo-field="community"><label>Community photograph</label><div class="photo-picker"><div class="photo-preview empty" data-photo-preview><span>No photo selected</span></div><div class="photo-controls"><label class="outline-btn file-btn">Upload a photo<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-photo-file hidden /></label><input type="url" placeholder="…or paste an https:// image link" data-photo-url /><input type="hidden" id="communityImage" name="image_url" data-photo-value /><button type="button" class="text-btn hidden" data-photo-remove>Remove photo</button><small data-photo-status>JPG, PNG, WebP or GIF up to 4 MB. The whole photo is shown — nothing is cropped.</small></div></div></div>
+              <div class="form-actions full-field"><button class="primary-btn" type="submit" id="communitySubmit">Publish community</button><button class="outline-btn hidden" type="button" id="cancelEditBtn">Cancel editing</button><span class="form-message" id="communityMessage" role="status"></span></div>
+            </form></section>
+          <section class="organizer-panel hidden" id="manageCommunityPanel"><div class="panel-heading"><h3>My communities</h3><p>Communities you have published. Only you can edit or delete them.</p></div><div id="organizerCommunities" class="manage-list"><p class="muted">You haven't created a community yet.</p></div></section>
+          <section class="organizer-panel hidden" id="createEventPanel"><div class="panel-heading"><h3>Publish an event</h3><p>Events belong to one of your communities and appear publicly as soon as they're published.</p></div>
+            <form id="eventForm" class="form-grid" novalidate>
+              <div class="field-block full-field"><label for="eventCommunity">Community *</label><select id="eventCommunity" name="community_id" required><option value="">Choose one of your communities</option></select></div>
+              <div class="field-block"><label for="eventName">Event name *</label><input id="eventName" name="name" required maxlength="100" placeholder="e.g. Monthly coding meetup" /></div>
+              <div class="field-block"><label for="eventVenue">Venue *</label><input id="eventVenue" name="venue" required maxlength="150" placeholder="Where will it happen?" /></div>
+              <div class="field-block"><label for="eventDate">Date *</label><input id="eventDate" name="event_date" type="date" required /></div>
+              <div class="field-block"><label for="eventTime">Start time *</label><input id="eventTime" name="event_time" type="time" required /></div>
+              <div class="field-block full-field"><label for="eventDescription">Event details</label><textarea id="eventDescription" name="description" rows="3" maxlength="2000" placeholder="Tell members what to expect"></textarea></div>
+              <div class="field-block full-field photo-field" data-photo-field="event"><label>Event photograph <span class="optional">(optional — the community photo is used otherwise)</span></label><div class="photo-picker"><div class="photo-preview empty" data-photo-preview><span>No photo selected</span></div><div class="photo-controls"><label class="outline-btn file-btn">Upload a photo<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-photo-file hidden /></label><input type="url" placeholder="…or paste an https:// image link" data-photo-url /><input type="hidden" id="eventImage" name="image_url" data-photo-value /><button type="button" class="text-btn hidden" data-photo-remove>Remove photo</button><small data-photo-status>JPG, PNG, WebP or GIF up to 4 MB.</small></div></div></div>
+              <div class="form-actions full-field"><button class="primary-btn" type="submit" id="eventSubmit">Publish event</button><span class="form-message" id="eventMessage" role="status"></span></div>
+            </form></section>
+          <section class="organizer-panel hidden" id="organizerEventsPanel"><div class="panel-heading"><h3>My published events</h3><p>Events for your communities, with the number of people registered.</p></div><div id="organizerEventList" class="manage-list"><p class="muted">No events published yet.</p></div></section>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer><a class="brand footer-brand" href="#home"><span class="brand-mark">C</span><span>Community<span class="brand-light">Connect</span></span></a><p>A more connected world starts with finding your people.</p><small>Discover openly. Connect meaningfully.</small></footer>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  
+<div class="auth-modal hidden" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+ <div class="auth-card">
+  <button class="auth-close" id="authClose" type="button" aria-label="Close">×</button>
+  <p class="eyebrow">COMMUNITY CONNECT</p><h2 id="authTitle">Welcome back</h2>
+  <p class="auth-intro" id="authIntro">Sign in to access your Community Connect space.</p>
+  <form id="authForm" novalidate>
+   <div class="field-block hidden" id="authRoleWrap"><span class="field-label">I want to</span><div class="role-choice" role="radiogroup" aria-label="Account type"><label class="role-option"><input type="radio" name="authRole" value="participant" checked><span><strong>Join communities</strong><small>Participant account</small></span></label><label class="role-option"><input type="radio" name="authRole" value="organizer"><span><strong>Run a community</strong><small>Organizer account</small></span></label></div></div>
+   <div class="field-block hidden" id="authNameWrap"><label for="authName">Full name</label><input id="authName" autocomplete="name" maxlength="80"></div>
+   <div class="field-block"><label for="authEmail">Email address</label><input id="authEmail" type="email" required autocomplete="email" maxlength="254"></div>
+   <div class="field-block"><label for="authPassword">Password</label><input id="authPassword" type="password" required minlength="8" maxlength="128" autocomplete="current-password"><small class="hidden" id="authPasswordHint">At least 8 characters, including a letter and a number.</small></div>
+   <button class="primary-btn auth-submit" id="authSubmit" type="submit">Log in</button>
+   <p class="form-message" id="authMessage" role="alert"></p><p class="auth-switch" id="authSwitch"></p>
+  </form>
+ </div>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
