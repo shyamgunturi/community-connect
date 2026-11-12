@@ -1,14 +1,14 @@
 # Community Connect — Testing report
 
-Date: 6 November 2026 · Version 2.0.0
+Date: 12 November 2026 · Version 3.0.0 (analytics update) — first issued 6 November 2026
 
 ## Summary
 
 | Suite | Result |
 |---|---|
 | Syntax and file check (`npm run check`) | ✅ all JS files parse |
-| Automated API tests (`npm test`) | ✅ **31 / 31 passed** |
-| Browser end-to-end tests (`node test/e2e.browser.js`, Chromium) | ✅ **30 / 30 passed**, run twice in a row |
+| Automated API tests (`npm test`) | ✅ **41 / 41 passed** |
+| Browser end-to-end tests (`node test/e2e.browser.js`, Chromium) | ✅ **38 / 38 passed** |
 | Failed tests remaining | **0** |
 
 ### ⚠️ Test environment — please read
@@ -33,6 +33,32 @@ npm start                   # then open http://localhost:3000 and http://localho
 Then check live location search by hand: type `Middles`, `TS1 3BX` and `Leeds` in the discovery search box.
 
 ---
+
+## Version 3 — analytics, run again, prices and attendance
+
+| Feature | API tests | Browser test |
+|---|---|---|
+| Ticket price and capacity stored; invalid price (text, negative, over £500) and capacity (0, decimals) rejected | ✅ | ✅ price and places shown on cards and event page |
+| Registration records the price paid; revenue visible only to the organizer | ✅ | ✅ |
+| Capacity enforced — the next person gets 409 "event is full" | ✅ | — |
+| Edit event; capacity can't go below bookings; other organizers/participants blocked (403) | ✅ | ✅ |
+| **Run again** copies name, time, venue, price, capacity to the next free week; repeats skip weeks already taken; custom date; past date rejected; non-owners blocked | ✅ | ✅ one click from My events |
+| Add-to-calendar `.ics` file valid (VCALENDAR, VEVENT, SUMMARY, DTSTART) | ✅ | ✅ |
+| Attendance only after the event starts, only by the owner; check-in time saved | ✅ | ✅ tick a person, count updates |
+| Cancelling after an event has started is refused | ✅ | — |
+| Ratings only by people marked attended; 1–5 enforced; one rating per person, updatable | ✅ | ✅ "Rate it" → 4 stars → thanks |
+| **Analytics** totals checked exactly against known data (attendance 100%, revenue £5 past + £7.50 booked, rating 5, fill rate 20%), 6 and 12-month periods, empty organizer, role checks | ✅ | ✅ 4 SVG graphs + 2 bar lists render, tooltip shows registered/attended/revenue/rating, period switch, CSV download |
+| Demo organizer has realistic history (attended ≤ registered for every event) | ✅ | ✅ |
+| Recommendations exclude joined communities and give reasons | ✅ | ✅ shown in participant dashboard |
+| Data (attendance, ratings, payments) survives a server restart | ✅ | — |
+| Old databases upgrade through migration 3 without data loss | ✅ | — |
+| Analytics on tablet and phone — no horizontal overflow | — | ✅ |
+
+**Chart colours** were checked with a colour-blindness validator: green `#1f8a70` and orange `#d0662c` pass all checks (lightness, chroma, colour-blind separation ΔE 8.4, normal-vision ΔE 23.4, contrast ≥ 3:1). Every chart also has a legend, hover tooltip and a data table, so nothing relies on colour alone.
+
+**Bugs found while testing version 3 and fixed:** the community form's submit code was accidentally removed during the edit-event change (caught by the browser test, restored and verified against the original); the wide analytics table stretched the tablet layout by 375 px; tooltip colour keys were missing; the per-event chart was crowded on phones (now shows the last 6 events there); a past event was labelled "Went" while showing registrations.
+
+**Payments:** ticket revenue is *recorded*, not charged. No payment provider is connected, so no real money moves.
 
 ## Test A — Organizer
 

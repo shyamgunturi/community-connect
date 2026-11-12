@@ -14,6 +14,11 @@ let geo, dir, srv, api;
 const S = {}; // shared state between tests (they run in order)
 const MBRO = { lat: 54.5742, lon: -1.2348 };
 
+function dbRun(sql, ...params) {
+  const db = new Database(path.join(dir, 'test.sqlite'));
+  try { return db.prepare(sql).run(...params); } finally { db.close(); }
+}
+
 function dbQuery(sql, ...params) {
   const db = new Database(path.join(dir, 'test.sqlite'));
   try { return db.prepare(sql).all(...params); } finally { db.close(); }
@@ -384,6 +389,163 @@ test('owner can edit their community', async () => {
   assert.equal(dbQuery('SELECT story FROM communities WHERE id = ?', S.communityId)[0].story, 'Updated story.');
 });
 
+
+// ---------------------------------------------------------------- prices, capacity, edit, run again
+test('events can have a ticket price and capacity; invalid values are rejected', async () => {
+  const base = { community_id: S.communityId, name: 'Paid Workshop', event_date: isoDate(10), event_time: '18:00', venue: 'Studio 3' };
+  for (const [body, field] of [[{ ...base, price: 'abc' }, 'price'], [{ ...base, price: '-2' }, 'price'], [{ ...base, price: '900' }, 'price'],
+    [{ ...base, capacity: '0' }, 'capacity'], [{ ...base, capacity: '2.5' }, 'capacity']]) {
+    const r = await api('POST', '/api/events', { token: S.org, body });
+    assert.equal(r.status, 400, JSON.stringify(body));
+    assert.equal(r.body.field, field);
+  }
+  const r = await api('POST', '/api/events', { token: S.org, body: { ...base, price: '7.50', capacity: '1' } });
+  assert.equal(r.status, 201, r.text);
+  assert.equal(r.body.event.price_pence, 750);
+  assert.equal(r.body.event.capacity, 1);
+  assert.equal(r.body.event.spots_left, 1);
+  S.paidEventId = r.body.event.id;
+});
+
+test('registration records the ticket price and respects capacity', async () => {
+  const r = await api('POST', `/api/events/${S.paidEventId}/register`, { token: S.part });
+  assert.equal(r.status, 201, r.text);
+  assert.match(r.body.message, /£7.50/);
+  assert.equal(dbQuery('SELECT amount_pence FROM event_registrations WHERE event_id = ?', S.paidEventId)[0].amount_pence, 750);
+  await api('POST', `/api/communities/${S.communityId}/join`, { token: S.part2 });
+  const full = await api('POST', `/api/events/${S.paidEventId}/register`, { token: S.part2 });
+  assert.equal(full.status, 409);
+  assert.equal(full.body.code, 'EVENT_FULL');
+  const pub = await api('GET', `/api/events/${S.paidEventId}`);
+  assert.equal(pub.body.event.is_full, true);
+  assert.equal(pub.body.event.revenue_pence, undefined, 'revenue is not shown publicly');
+  const own = await api('GET', `/api/events/${S.paidEventId}`, { token: S.org });
+  assert.equal(own.body.event.revenue_pence, 750);
+});
+
+test('organizer can edit their event; capacity cannot drop below bookings; others cannot edit', async () => {
+  const body = { name: 'Paid Workshop', event_date: isoDate(11), event_time: '18:30', venue: 'Studio 4', price: '7.50', capacity: '5' };
+  const r = await api('PUT', `/api/events/${S.paidEventId}`, { token: S.org, body });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.event.venue, 'Studio 4');
+  assert.equal(r.body.event.spots_left, 4);
+  const tooSmall = await api('PUT', `/api/events/${S.paidEventId}`, { token: S.org, body: { ...body, capacity: '0' } });
+  assert.equal(tooSmall.status, 400);
+  assert.equal((await api('PUT', `/api/events/${S.paidEventId}`, { token: S.org2, body })).status, 403);
+  assert.equal((await api('PUT', `/api/events/${S.paidEventId}`, { token: S.part, body })).status, 403);
+});
+
+test('"Run again" copies an event to the next free week in one click', async () => {
+  const src = (await api('GET', `/api/events/${S.paidEventId}`)).body.event;
+  const r1 = await api('POST', `/api/events/${S.paidEventId}/repeat`, { token: S.org, body: {} });
+  assert.equal(r1.status, 201, r1.text);
+  const d = new Date(`${src.event_date}T00:00:00`); d.setDate(d.getDate() + 7);
+  const p = n => String(n).padStart(2, '0');
+  assert.equal(r1.body.event.event_date, `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`);
+  for (const k of ['name', 'event_time', 'venue', 'price_pence', 'capacity']) assert.equal(r1.body.event[k], src[k], k);
+  assert.equal(r1.body.event.registration_count, 0, 'the copy starts with no registrations');
+  const r2 = await api('POST', `/api/events/${S.paidEventId}/repeat`, { token: S.org, body: {} });
+  assert.equal(r2.status, 201);
+  assert.ok(r2.body.event.event_date > r1.body.event.event_date, 'second copy skips the week already taken');
+  const custom = await api('POST', `/api/events/${S.paidEventId}/repeat`, { token: S.org, body: { event_date: isoDate(60) } });
+  assert.equal(custom.body.event.event_date, isoDate(60));
+  assert.equal((await api('POST', `/api/events/${S.paidEventId}/repeat`, { token: S.org, body: { event_date: isoDate(-3) } })).status, 400);
+  assert.equal((await api('POST', `/api/events/${S.paidEventId}/repeat`, { token: S.org2, body: {} })).status, 403);
+  assert.equal((await api('POST', `/api/events/${S.paidEventId}/repeat`, { token: S.part, body: {} })).status, 403);
+  assert.equal((await api('POST', '/api/events/999999/repeat', { token: S.org, body: {} })).status, 404);
+});
+
+test('add-to-calendar file is a valid iCalendar event', async () => {
+  const res = await fetch(`${srv.base}/api/events/${S.paidEventId}/calendar.ics`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/calendar/);
+  const text = await res.text();
+  for (const s of ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'SUMMARY:Paid Workshop', 'DTSTART:', 'END:VCALENDAR']) assert.ok(text.includes(s), s);
+});
+
+// ---------------------------------------------------------------- attendance, feedback, analytics
+test('attendance: only after the event starts, only by the owner', async () => {
+  assert.equal((await api('POST', `/api/events/${S.paidEventId}/attendees/all`, { token: S.org, body: {} })).status, 400, 'future event');
+  // A past event of Olivia's community that Priya registered for (created directly, as if time had passed).
+  const r = dbRun("INSERT INTO events(community_id, name, event_date, event_time, venue, price_pence, status, created_at) VALUES(?, 'Past Meetup', ?, '18:00', 'Hall', 500, 'published', datetime('now'))", S.communityId, isoDate(-7));
+  S.pastEventId = Number(r.lastInsertRowid);
+  const priya = dbQuery("SELECT id FROM users WHERE email='priya@example.com'")[0].id;
+  S.priyaId = priya;
+  dbRun("INSERT INTO event_registrations(user_id, event_id, registered_at, amount_pence) VALUES(?, ?, datetime('now'), 500)", priya, S.pastEventId);
+  const list = await api('GET', `/api/events/${S.pastEventId}/attendees`, { token: S.org });
+  assert.equal(list.status, 200);
+  assert.equal(list.body.attendees.length, 1);
+  assert.equal(list.body.attendees[0].attended, false);
+  assert.equal((await api('GET', `/api/events/${S.pastEventId}/attendees`, { token: S.org2 })).status, 403);
+  assert.equal((await api('GET', `/api/events/${S.pastEventId}/attendees`, { token: S.part })).status, 403);
+  assert.equal((await api('PUT', `/api/events/${S.pastEventId}/attendees/${priya}`, { token: S.org, body: { attended: 'yes' } })).status, 400);
+  assert.equal((await api('PUT', `/api/events/${S.pastEventId}/attendees/999999`, { token: S.org, body: { attended: true } })).status, 404);
+  assert.equal((await api('DELETE', `/api/events/${S.pastEventId}/register`, { token: S.part })).status, 400, 'cannot cancel after the event started');
+});
+
+test('feedback: only attendees can rate, ratings are validated and can be updated', async () => {
+  const before = await api('POST', `/api/events/${S.pastEventId}/feedback`, { token: S.part, body: { rating: 5 } });
+  assert.equal(before.status, 403);
+  assert.equal(before.body.code, 'NOT_ATTENDED');
+  const mark = await api('PUT', `/api/events/${S.pastEventId}/attendees/${S.priyaId}`, { token: S.org, body: { attended: true } });
+  assert.equal(mark.status, 200, mark.text);
+  assert.ok(dbQuery('SELECT checked_in_at FROM event_registrations WHERE event_id = ?', S.pastEventId)[0].checked_in_at);
+  assert.equal((await api('POST', `/api/events/${S.pastEventId}/feedback`, { token: S.part, body: { rating: 6 } })).status, 400);
+  assert.equal((await api('POST', `/api/events/${S.pastEventId}/feedback`, { token: S.part, body: { rating: 4, comment: 'Good fun' } })).status, 201);
+  const upd = await api('POST', `/api/events/${S.pastEventId}/feedback`, { token: S.part, body: { rating: 5 } });
+  assert.equal(upd.status, 201);
+  assert.equal(upd.body.event.my_rating, 5);
+  assert.equal(dbQuery('SELECT COUNT(*) n FROM event_feedback WHERE event_id = ?', S.pastEventId)[0].n, 1, 'one rating per person');
+  assert.equal((await api('POST', `/api/events/${S.paidEventId}/feedback`, { token: S.part, body: { rating: 5 } })).status, 400, 'future event');
+  const mine = await api('GET', '/api/participant/events', { token: S.part });
+  const past = mine.body.events.find(e => e.id === S.pastEventId);
+  assert.equal(past.attended, true);
+  assert.equal(past.my_rating, 5);
+});
+
+test('organizer analytics: totals, per-event, monthly revenue, member growth', async () => {
+  const r = await api('GET', '/api/organizer/analytics', { token: S.org });
+  assert.equal(r.status, 200, r.text);
+  const s = r.body.summary;
+  assert.equal(s.events_past, 1);
+  assert.equal(s.registrations_past, 1);
+  assert.equal(s.attended, 1);
+  assert.equal(s.attendance_rate, 100);
+  assert.equal(s.revenue_past_pence, 500);
+  assert.equal(s.revenue_pence, 500 + 750);
+  assert.equal(s.avg_rating, 5);
+  assert.equal(r.body.monthly.length, 6);
+  assert.equal(r.body.monthly.reduce((n, m) => n + m.revenue_pence, 0), 500);
+  assert.equal(r.body.per_event[0].attendance_rate, 100);
+  assert.ok(r.body.member_growth.at(-1).total_members >= 2);
+  assert.ok(r.body.upcoming.some(e => e.id === S.paidEventId && e.fill_rate === 20));
+  assert.equal((await api('GET', '/api/organizer/analytics?months=12', { token: S.org })).body.monthly.length, 12);
+  const empty = await api('GET', '/api/organizer/analytics', { token: S.org2 });
+  assert.equal(empty.body.summary.events_total, 0);
+  assert.equal(empty.body.summary.attendance_rate, null);
+  assert.equal((await api('GET', '/api/organizer/analytics', { token: S.part })).status, 403);
+  assert.equal((await api('GET', '/api/organizer/analytics')).status, 401);
+});
+
+test('demo organizer has realistic history for the analytics demo', async () => {
+  const login = await api('POST', '/api/auth/login', { body: { email: 'demo-organizer@communityconnect.local', password: 'Demo12345' } });
+  assert.equal(login.status, 200, 'demo login works outside production');
+  const r = await api('GET', '/api/organizer/analytics', { token: login.body.token });
+  const s = r.body.summary;
+  assert.ok(s.events_past >= 10 && s.attended > 0 && s.revenue_pence > 0 && s.avg_rating >= 1);
+  assert.ok(s.attended <= s.registrations_past);
+  assert.ok(r.body.per_event.every(e => e.attended <= e.registered));
+});
+
+test('participants get community recommendations they have not joined', async () => {
+  const r = await api('GET', '/api/participant/recommendations', { token: S.part });
+  assert.equal(r.status, 200);
+  assert.ok(r.body.communities.length >= 1 && r.body.communities.length <= 3);
+  assert.ok(r.body.communities.every(c => !c.joined && c.id !== S.communityId));
+  assert.ok(r.body.communities.every(c => c.reasons.length >= 1));
+  assert.equal((await api('GET', '/api/participant/recommendations', { token: S.org })).status, 403);
+});
+
 // ---------------------------------------------------------------- malformed requests
 test('malformed and oversized requests are handled safely', async () => {
   const bad = await api('POST', '/api/auth/login', { raw: '{"email":' });
@@ -404,10 +566,13 @@ test('data persists after the server restarts and users can log in again', async
   assert.equal(login.status, 200);
   const t = login.body.token;
   assert.deepEqual((await api('GET', '/api/participant/communities', { token: t })).body.communities.map(c => c.id), [S.communityId]);
-  assert.deepEqual((await api('GET', '/api/participant/events', { token: t })).body.events.map(e => e.id), [S.eventId]);
+  const regs = (await api('GET', '/api/participant/events', { token: t })).body.events.map(e => e.id);
+  for (const id of [S.eventId, S.paidEventId, S.pastEventId]) assert.ok(regs.includes(id), `registration ${id} kept`);
+  assert.equal(dbQuery('SELECT rating FROM event_feedback WHERE event_id = ?', S.pastEventId)[0].rating, 5, 'rating kept');
+  assert.equal(dbQuery('SELECT attended FROM event_registrations WHERE event_id = ?', S.pastEventId)[0].attended, 1, 'attendance kept');
   assert.equal((await api('GET', '/api/organizer/communities', { token: S.org })).status, 200, 'earlier token still valid after restart');
   assert.ok((await api('GET', '/api/events/public')).body.events.some(e => e.id === S.eventId));
-  assert.ok(!srv.output.includes('Added 7 starter'), 'seed data is not re-inserted');
+  assert.ok(!srv.output.includes('Added starter data'), 'seed data is not re-inserted');
   const counts = dbQuery('SELECT (SELECT COUNT(*) FROM users) u, (SELECT COUNT(*) FROM communities) c');
   assert.ok(counts[0].u >= 5 && counts[0].c >= 9);
 });

@@ -86,6 +86,25 @@ Suggested demo:
 | Events | Public previews (name, community, date, time, venue, description, photo) for everyone. Registration requires a participant account **and** membership of the community (checked by the server). Dates must be real, not in the past and at most two years ahead. |
 | Dashboards | Participant: joined communities (leave), registered events (cancel). Organizer: stats, communities (view/edit/delete/add event), events with registration counts (view/delete). |
 
+### New in version 3: analytics and organizer tools
+
+| Feature | Where to find it | How it works |
+|---|---|---|
+| **Analytics dashboard** | Organizer → **Analytics** (opens first when you have events) | Key figures (revenue, registrations, attendance rate, rating, members, upcoming bookings) plus graphs: registered vs attended per past event, ticket revenue by month, attendance by month, member growth, revenue by community, and places booked for upcoming events. Hover any graph for details. Switch between 6 and 12 months. **Download CSV** exports the data. |
+| **Run again** | Organizer → **My events** → **↻ Run again** (also in the analytics table) | One click copies the event — name, time, venue, description, photo, price and capacity — to the next free week. Edit it afterwards if needed. |
+| **Edit events** | My events → **Edit** (upcoming events) | Change any detail. Capacity can't go below the number already booked. |
+| **Ticket prices and revenue** | Price (£) when publishing an event | The price is recorded with each registration and shown as revenue in analytics. *Payments are recorded, not charged online — "pay on the day". Real card payments would need a provider such as Stripe.* |
+| **Capacity** | Capacity when publishing an event | Shows "places left"; registration closes automatically when full (checked safely inside a database transaction). |
+| **Attendance check-in** | My events → **Attendance** (after the event starts) | Tick who came, or **Mark everyone as attended**. This produces the attendance rate. |
+| **Ratings** | Participant dashboard → **Rate it** | People marked as attended can give 1–5 stars and a comment. Average ratings appear in analytics and on the event page. |
+| **Add to calendar** | Event page → **📅 Add to calendar** | Downloads an `.ics` file for Google, Outlook or Apple Calendar. |
+| **Recommended for you** | Participant dashboard | Suggests up to 3 communities based on the categories you joined, distance and upcoming events. |
+
+**Demo data for analytics:** a new, empty database gets 15 past events with registrations, attendance, revenue and ratings from 30 demo members. Log in as the demo organizer to see the graphs:
+- Locally: `demo-organizer@communityconnect.local` / `Demo12345` (printed in the terminal on first start).
+- On Render (production): set the environment variable `SEED_ORGANIZER_PASSWORD` (e.g. `Demo12345`) — without it the demo organizer gets a random password.
+- If your local database was created by an older version, the demo history isn't added. Stop the server and delete `data/community-connect.sqlite*` to start fresh (**this deletes all accounts**).
+
 ## 7. Configuration (`.env`)
 
 Copy `.env.example` to `.env`. All values are optional in development. Key ones: `PORT`, `JWT_SECRET`, `DATABASE_PATH`, `SEED_DEMO_DATA`, `SEED_ORGANIZER_PASSWORD`, `GEOCODER_USER_AGENT`, `GEOCODER_CONTACT_EMAIL`.
@@ -96,9 +115,9 @@ If `JWT_SECRET` is empty in development, a random secret is generated once in `d
 
 SQLite file: `data/community-connect.sqlite`. If an **older** `community-connect.sqlite` exists in the project root, from the original starter, it is used automatically so existing accounts aren't lost.
 
-Tables: `users`, `communities`, `memberships` (primary key user+community → no duplicates), `events`, `event_registrations` (primary key user+event → no duplicates). Foreign keys are enforced with `ON DELETE CASCADE`. Deleting a community removes its events, memberships and registrations, so nothing is left orphaned.
+Tables: `users`, `communities`, `memberships` (primary key user+community → no duplicates), `events` (with `price_pence`, `capacity`, `repeated_from`), `event_registrations` (primary key user+event → no duplicates; with `attended`, `checked_in_at`, `amount_pence`), `event_feedback` (one 1–5 rating per person per event). Foreign keys are enforced with `ON DELETE CASCADE`. Deleting a community removes its events, memberships and registrations, so nothing is left orphaned.
 
-**Migrations** are versioned (`PRAGMA user_version`) and additive only. They never drop tables or rows, and run automatically on start. Migration 2 adds photos, postcode, status, timestamps and indexes to an older database.
+**Migrations** are versioned (`PRAGMA user_version`) and additive only. They never drop tables or rows, and run automatically on start. Migration 2 adds photos, postcode, status, timestamps and indexes; migration 3 adds prices, capacity, attendance, amounts paid and the feedback table.
 
 To inspect the data, use the VS Code extension "SQLite Viewer", or [DB Browser for SQLite](https://sqlitebrowser.org/), and open `data/community-connect.sqlite`. Stop the server first if you want to edit data.
 
@@ -110,8 +129,8 @@ See **[docs/API.md](docs/API.md)** for every endpoint with request and response 
 
 ## 10. Testing
 
-- `npm test` runs **31 automated API tests**: registration/login, validation, permissions, joining, registration, location search, distance filtering, uploads, restart persistence, cascades, migrations, and damaged-database and geocoder-outage handling.
-- Optional browser test (30 steps across desktop, tablet and mobile):
+- `npm test` runs **41 automated API tests**: registration/login, validation, permissions, joining, registration, location search, distance filtering, uploads, restart persistence, cascades, migrations, and damaged-database and geocoder-outage handling.
+- Optional browser test (38 steps across desktop, tablet and mobile, including analytics, run again, attendance and ratings):
   ```bash
   npm install --no-save playwright
   npx playwright install chromium
@@ -150,8 +169,8 @@ Location data: [postcodes.io](https://postcodes.io) (Office for National Statist
 ## 13. Known limitations
 
 - No email verification, password reset or account deletion screen yet.
+- Ticket payments are recorded but not charged online (no payment provider).
 - Communities are published immediately. There is no draft or moderation step.
-- Events can be deleted but not edited. To change one, delete it and publish it again.
 - Live geocoding depends on postcodes.io and Nominatim being reachable. Offline, only about 60 larger UK towns are recognised.
 - Distances are straight-line ("as the crow flies"), not travel distance.
 - Rate limiting and the geocoding cache are in memory: they reset on restart and assume a single server process.

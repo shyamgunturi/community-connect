@@ -119,9 +119,16 @@ function createApp({ db, config }) {
       c.image_url AS community_image_url, c.latitude AS community_latitude, c.longitude AS community_longitude,
       c.owner_id AS owner_id,
       (SELECT COUNT(*) FROM event_registrations r WHERE r.event_id = e.id) AS registration_count,
+      (SELECT COUNT(*) FROM event_registrations r WHERE r.event_id = e.id AND r.attended = 1) AS attended_count,
+      (SELECT COALESCE(SUM(r.amount_pence), 0) FROM event_registrations r WHERE r.event_id = e.id) AS revenue_pence,
+      (SELECT ROUND(AVG(f.rating), 1) FROM event_feedback f WHERE f.event_id = e.id) AS avg_rating,
+      (SELECT COUNT(*) FROM event_feedback f WHERE f.event_id = e.id) AS rating_count,
       EXISTS(SELECT 1 FROM event_registrations r WHERE r.event_id = e.id AND r.user_id = ?) AS registered,
-      EXISTS(SELECT 1 FROM memberships m WHERE m.community_id = e.community_id AND m.user_id = ?) AS is_member
+      EXISTS(SELECT 1 FROM memberships m WHERE m.community_id = e.community_id AND m.user_id = ?) AS is_member,
+      (SELECT r.attended FROM event_registrations r WHERE r.event_id = e.id AND r.user_id = ?) AS my_attended,
+      (SELECT f.rating FROM event_feedback f WHERE f.event_id = e.id AND f.user_id = ?) AS my_rating
     FROM events e JOIN communities c ON c.id = e.community_id`;
+  const eventParams = uid => [uid ?? -1, uid ?? -1, uid ?? -1, uid ?? -1];
 
   function shapeEvent(e, userId) {
     const isPast = e.event_date < today() || (e.event_date === today() && e.event_time < now());
@@ -132,7 +139,15 @@ function createApp({ db, config }) {
       community_image_url: e.community_image_url || '',
       community_latitude: e.community_latitude, community_longitude: e.community_longitude,
       registration_count: e.registration_count ?? 0,
-      registered: !!e.registered, is_member: !!e.is_member, is_owner: userId != null && e.owner_id === userId, is_past: isPast
+      price_pence: e.price_pence ?? 0, capacity: e.capacity ?? null,
+      spots_left: e.capacity ? Math.max(0, e.capacity - (e.registration_count ?? 0)) : null,
+      is_full: !!e.capacity && (e.registration_count ?? 0) >= e.capacity,
+      avg_rating: e.avg_rating ?? null, rating_count: e.rating_count ?? 0,
+      registered: !!e.registered, is_member: !!e.is_member, is_owner: userId != null && e.owner_id === userId, is_past: isPast,
+      has_started: e.event_date < today() || (e.event_date === today() && e.event_time <= now()),
+      attended: e.my_attended === 1, my_rating: e.my_rating ?? null,
+      // Organizer-only figures
+      ...(userId != null && e.owner_id === userId ? { attended_count: e.attended_count ?? 0, revenue_pence: e.revenue_pence ?? 0 } : {})
     };
   }
 
@@ -142,7 +157,7 @@ function createApp({ db, config }) {
     return c;
   }
   function loadEvent(id, uid) {
-    const e = db.prepare(`${EVENT_SELECT} WHERE e.id = ?`).get(uid ?? -1, uid ?? -1, id);
+    const e = db.prepare(`${EVENT_SELECT} WHERE e.id = ?`).get(...eventParams(uid), id);
     if (!e) throw new HttpError(404, 'Event not found.');
     return e;
   }
@@ -290,7 +305,7 @@ function createApp({ db, config }) {
     const c = loadCommunity(id, uid);
     if (c.status !== 'published' && c.owner_id !== uid) throw new HttpError(404, 'Community not found.');
     const events = db.prepare(`${EVENT_SELECT} WHERE e.community_id = ? AND e.status = 'published' AND ${UPCOMING} ORDER BY e.event_date, e.event_time`)
-      .all(uid ?? -1, uid ?? -1, id, today(), today(), now());
+      .all(...eventParams(uid), id, today(), today(), now());
     res.json({ community: shapeCommunity(c, uid), events: events.map(e => shapeEvent(e, uid)) });
   });
 
@@ -364,7 +379,7 @@ function createApp({ db, config }) {
     if (req.query.community_id) { where.push('e.community_id = ?'); params.push(v.id(req.query.community_id, 'community ID')); }
     const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
     const rows = db.prepare(`${EVENT_SELECT} WHERE ${where.join(' AND ')} ORDER BY e.event_date, e.event_time, e.id LIMIT ${limit}`)
-      .all(uid ?? -1, uid ?? -1, ...params);
+      .all(...eventParams(uid), ...params);
     res.json({ events: rows.map(e => shapeEvent(e, uid)), count: rows.length });
   }
   app.get('/api/events/public', optionalAuth, publicEvents);
@@ -378,29 +393,85 @@ function createApp({ db, config }) {
     res.json({ event: shapeEvent(e, uid) });
   });
 
-  app.post('/api/events', requireAuth, requireRole('organizer'), (req, res) => {
-    const b = req.body || {};
-    if (b.community_id === undefined || b.community_id === null || b.community_id === '') throw new v.ValidationError('Choose one of your communities.', 'community_id');
-    const communityId = v.id(b.community_id, 'community ID');
-    const c = requireOwnedCommunity(communityId, req.user);
+  /** Validates the editable fields of an event. `existing` is passed when editing. */
+  function eventInput(body, existing) {
+    const b = body || {};
     const name = v.text(b.name, { field: 'name', label: 'Event name', min: 3, max: 100, required: true });
     const date = v.eventDate(b.event_date);
     const time = v.eventTime(b.event_time, date);
     const venue = v.text(b.venue, { field: 'venue', label: 'Venue', min: 2, max: 150, required: true });
     const description = v.text(b.description, { field: 'description', label: 'Event details', max: 2000 });
     const image = v.imageUrl(b.image_url);
-    const dup = db.prepare('SELECT id FROM events WHERE community_id = ? AND name = ? COLLATE NOCASE AND event_date = ? AND event_time = ?').get(c.id, name, date, time);
+    const price = v.pricePence(b.price);
+    const cap = v.capacity(b.capacity);
+    if (existing && cap != null) {
+      const booked = db.prepare('SELECT COUNT(*) AS n FROM event_registrations WHERE event_id = ?').get(existing.id).n;
+      if (cap < booked) throw new v.ValidationError(`Capacity cannot be lower than the ${booked} people already registered.`, 'capacity');
+    }
+    return { name, date, time, venue, description, image, price, cap };
+  }
+
+  function requireOwnedEvent(id, user) {
+    const e = q.eventById.get(id);
+    if (!e) throw new HttpError(404, 'Event not found.');
+    requireOwnedCommunity(e.community_id, user);
+    return e;
+  }
+
+  const insertEventStmt = db.prepare(`INSERT INTO events(community_id, name, event_date, event_time, venue, description, image_url, price_pence, capacity, repeated_from, status, created_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', datetime('now'))`);
+
+  app.post('/api/events', requireAuth, requireRole('organizer'), (req, res) => {
+    const b = req.body || {};
+    if (b.community_id === undefined || b.community_id === null || b.community_id === '') throw new v.ValidationError('Choose one of your communities.', 'community_id');
+    const communityId = v.id(b.community_id, 'community ID');
+    const c = requireOwnedCommunity(communityId, req.user);
+    const x = eventInput(b);
+    const dup = db.prepare('SELECT id FROM events WHERE community_id = ? AND name = ? COLLATE NOCASE AND event_date = ? AND event_time = ?').get(c.id, x.name, x.date, x.time);
     if (dup) throw new HttpError(409, 'This event has already been published.', { field: 'name' });
-    const r = db.prepare(`INSERT INTO events(community_id, name, event_date, event_time, venue, description, image_url, status, created_at)
-      VALUES(?, ?, ?, ?, ?, ?, ?, 'published', datetime('now'))`).run(c.id, name, date, time, venue, description, image);
+    const r = insertEventStmt.run(c.id, x.name, x.date, x.time, x.venue, x.description, x.image, x.price, x.cap, null);
     res.status(201).json({ event: shapeEvent(loadEvent(Number(r.lastInsertRowid), req.user.id), req.user.id), message: 'Event published.' });
+  });
+
+  app.put('/api/events/:id', requireAuth, requireRole('organizer'), (req, res) => {
+    const id = v.id(req.params.id, 'event ID');
+    const existing = requireOwnedEvent(id, req.user);
+    const x = eventInput(req.body, existing);
+    const dup = db.prepare('SELECT id FROM events WHERE community_id = ? AND name = ? COLLATE NOCASE AND event_date = ? AND event_time = ? AND id != ?').get(existing.community_id, x.name, x.date, x.time, id);
+    if (dup) throw new HttpError(409, 'Another event with this name already runs at that date and time.', { field: 'name' });
+    db.prepare('UPDATE events SET name = ?, event_date = ?, event_time = ?, venue = ?, description = ?, image_url = ?, price_pence = ?, capacity = ? WHERE id = ?')
+      .run(x.name, x.date, x.time, x.venue, x.description, x.image, x.price, x.cap, id);
+    res.json({ event: shapeEvent(loadEvent(id, req.user.id), req.user.id), message: 'Event updated.' });
+  });
+
+  /**
+   * "Run again": copies an event (name, time, venue, description, photo, price, capacity) to a new date.
+   * Default date = the next same weekday after today (one week after the original if that is still ahead).
+   */
+  app.post('/api/events/:id/repeat', requireAuth, requireRole('organizer'), (req, res) => {
+    const id = v.id(req.params.id, 'event ID');
+    const src = requireOwnedEvent(id, req.user);
+    const b = req.body || {};
+    let date;
+    if (b.event_date) date = v.eventDate(b.event_date);
+    else {
+      const d = new Date(`${src.event_date}T00:00:00`);
+      do { d.setDate(d.getDate() + 7); } while (v.todayIso(d) < today() || (v.todayIso(d) === today() && src.event_time <= now()));
+      // Skip dates that already have this event
+      while (db.prepare('SELECT 1 FROM events WHERE community_id = ? AND name = ? COLLATE NOCASE AND event_date = ? AND event_time = ?').get(src.community_id, src.name, v.todayIso(d), src.event_time)) d.setDate(d.getDate() + 7);
+      date = v.eventDate(v.todayIso(d));
+    }
+    const time = v.eventTime(b.event_time || src.event_time, date);
+    const dup = db.prepare('SELECT id FROM events WHERE community_id = ? AND name = ? COLLATE NOCASE AND event_date = ? AND event_time = ?').get(src.community_id, src.name, date, time);
+    if (dup) throw new HttpError(409, 'This event is already scheduled on that date.', { field: 'event_date' });
+    const r = insertEventStmt.run(src.community_id, src.name, date, time, src.venue, src.description, src.image_url, src.price_pence, src.capacity, src.id);
+    const event = shapeEvent(loadEvent(Number(r.lastInsertRowid), req.user.id), req.user.id);
+    res.status(201).json({ event, message: `“${src.name}” is scheduled again for ${date} at ${time}.` });
   });
 
   app.delete('/api/events/:id', requireAuth, requireRole('organizer'), (req, res) => {
     const id = v.id(req.params.id, 'event ID');
-    const e = q.eventById.get(id);
-    if (!e) throw new HttpError(404, 'Event not found.');
-    requireOwnedCommunity(e.community_id, req.user);
+    requireOwnedEvent(id, req.user);
     db.prepare('DELETE FROM events WHERE id = ?').run(id);
     res.json({ message: 'Event deleted.' });
   });
@@ -414,21 +485,104 @@ function createApp({ db, config }) {
     if (!q.isMember.get(req.user.id, e.community_id)) {
       throw new HttpError(403, `Join ${e.community_name} before registering for its events.`, { code: 'MEMBERSHIP_REQUIRED', community_id: e.community_id });
     }
-    const r = db.prepare("INSERT OR IGNORE INTO event_registrations(user_id, event_id, registered_at) VALUES(?, ?, datetime('now'))").run(req.user.id, id);
-    const already = r.changes === 0;
-    res.status(already ? 200 : 201).json({
-      registered: true, already_registered: already,
-      message: already ? 'You are already registered for this event.' : `You're registered for ${e.name}.`,
+    // Capacity check and insert happen in one transaction so two people cannot take the last place.
+    const book = db.transaction(() => {
+      if (q.isRegistered.get(req.user.id, id)) return false;
+      const n = db.prepare('SELECT COUNT(*) AS n FROM event_registrations WHERE event_id = ?').get(id).n;
+      if (e.capacity && n >= e.capacity) throw new HttpError(409, 'Sorry, this event is full.', { code: 'EVENT_FULL' });
+      db.prepare("INSERT INTO event_registrations(user_id, event_id, registered_at, amount_pence) VALUES(?, ?, datetime('now'), ?)").run(req.user.id, id, e.price_pence || 0);
+      return true;
+    });
+    const created = book();
+    const paid = e.price_pence ? ` Ticket: £${(e.price_pence / 100).toFixed(2)} (pay on the day).` : '';
+    res.status(created ? 201 : 200).json({
+      registered: true, already_registered: !created,
+      message: created ? `You're registered for ${e.name}.${paid}` : 'You are already registered for this event.',
       event: shapeEvent(loadEvent(id, req.user.id), req.user.id)
     });
   });
 
   app.delete('/api/events/:id/register', requireAuth, requireRole('participant'), (req, res) => {
     const id = v.id(req.params.id, 'event ID');
-    if (!q.eventById.get(id)) throw new HttpError(404, 'Event not found.');
+    const e = loadEvent(id, req.user.id);
+    if (shapeEvent(e, req.user.id).has_started) throw new HttpError(400, 'This event has already started, so the registration can no longer be cancelled.');
     const r = db.prepare('DELETE FROM event_registrations WHERE user_id = ? AND event_id = ?').run(req.user.id, id);
     if (!r.changes) throw new HttpError(404, 'You are not registered for this event.');
     res.json({ registered: false, message: 'Your registration was cancelled.' });
+  });
+
+  // ---------- attendance (organizer check-in) ----------
+  app.get('/api/events/:id/attendees', requireAuth, requireRole('organizer'), (req, res) => {
+    const id = v.id(req.params.id, 'event ID');
+    requireOwnedEvent(id, req.user);
+    const event = shapeEvent(loadEvent(id, req.user.id), req.user.id);
+    const attendees = db.prepare(`SELECT u.id AS user_id, u.name, u.email, r.registered_at, r.attended, r.checked_in_at, r.amount_pence,
+        f.rating, f.comment
+      FROM event_registrations r JOIN users u ON u.id = r.user_id
+      LEFT JOIN event_feedback f ON f.user_id = r.user_id AND f.event_id = r.event_id
+      WHERE r.event_id = ? ORDER BY u.name COLLATE NOCASE`).all(id)
+      .map(a => ({ ...a, attended: a.attended === 1 }));
+    res.json({ event, attendees });
+  });
+
+  function setAttendance(eventId, userIds, attended) {
+    const stmt = db.prepare(`UPDATE event_registrations SET attended = ?, checked_in_at = CASE WHEN ? = 1 THEN COALESCE(checked_in_at, datetime('now')) ELSE NULL END
+      WHERE event_id = ? AND user_id = ?`);
+    return db.transaction(() => userIds.reduce((n, uid) => n + stmt.run(attended, attended, eventId, uid).changes, 0))();
+  }
+
+  app.put('/api/events/:id/attendees/:userId', requireAuth, requireRole('organizer'), (req, res) => {
+    const id = v.id(req.params.id, 'event ID');
+    const userId = v.id(req.params.userId, 'participant ID');
+    requireOwnedEvent(id, req.user);
+    if (!shapeEvent(loadEvent(id, req.user.id), req.user.id).has_started) throw new HttpError(400, 'You can record attendance once the event has started.');
+    if (typeof (req.body || {}).attended !== 'boolean') throw new v.ValidationError('Send attended: true or false.', 'attended');
+    if (!setAttendance(id, [userId], req.body.attended ? 1 : 0)) throw new HttpError(404, 'That person is not registered for this event.');
+    res.json({ attended: req.body.attended, message: req.body.attended ? 'Marked as attended.' : 'Marked as not attended.' });
+  });
+
+  app.post('/api/events/:id/attendees/all', requireAuth, requireRole('organizer'), (req, res) => {
+    const id = v.id(req.params.id, 'event ID');
+    requireOwnedEvent(id, req.user);
+    if (!shapeEvent(loadEvent(id, req.user.id), req.user.id).has_started) throw new HttpError(400, 'You can record attendance once the event has started.');
+    const ids = db.prepare('SELECT user_id FROM event_registrations WHERE event_id = ?').all(id).map(r => r.user_id);
+    const n = setAttendance(id, ids, 1);
+    res.json({ updated: n, message: `Marked ${n} ${n === 1 ? 'person' : 'people'} as attended.` });
+  });
+
+  // ---------- feedback (participants who attended) ----------
+  app.post('/api/events/:id/feedback', requireAuth, requireRole('participant'), (req, res) => {
+    const id = v.id(req.params.id, 'event ID');
+    const e = loadEvent(id, req.user.id);
+    if (!shapeEvent(e, req.user.id).has_started) throw new HttpError(400, 'You can rate an event after it has taken place.');
+    if (e.my_attended !== 1) throw new HttpError(403, 'Only people the organizer marked as attended can rate this event.', { code: 'NOT_ATTENDED' });
+    const rating = v.rating((req.body || {}).rating);
+    const comment = v.text((req.body || {}).comment, { field: 'comment', label: 'Comment', max: 500 });
+    db.prepare(`INSERT INTO event_feedback(user_id, event_id, rating, comment, created_at) VALUES(?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(user_id, event_id) DO UPDATE SET rating = excluded.rating, comment = excluded.comment, created_at = excluded.created_at`)
+      .run(req.user.id, id, rating, comment);
+    res.status(201).json({ message: 'Thanks for your feedback!', event: shapeEvent(loadEvent(id, req.user.id), req.user.id) });
+  });
+
+  // ---------- add to calendar (.ics) ----------
+  app.get('/api/events/:id/calendar.ics', (req, res) => {
+    const id = v.id(req.params.id, 'event ID');
+    const e = loadEvent(id, null);
+    if (e.status !== 'published') throw new HttpError(404, 'Event not found.');
+    const icsText = t => String(t || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/([,;])/g, '\\$1');
+    const start = `${e.event_date.replace(/-/g, '')}T${e.event_time.replace(':', '')}00`;
+    const endDate = new Date(`${e.event_date}T${e.event_time}:00`);
+    endDate.setHours(endDate.getHours() + 2);
+    const pad = n => String(n).padStart(2, '0');
+    const end = `${endDate.getFullYear()}${pad(endDate.getMonth() + 1)}${pad(endDate.getDate())}T${pad(endDate.getHours())}${pad(endDate.getMinutes())}00`;
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const body = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Community Connect//EN', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT',
+      `UID:event-${e.id}@communityconnect`, `DTSTAMP:${stamp}`, `DTSTART:${start}`, `DTEND:${end}`,
+      `SUMMARY:${icsText(e.name)}`, `LOCATION:${icsText(`${e.venue}${e.community_town ? ', ' + e.community_town : ''}`)}`,
+      `DESCRIPTION:${icsText(`${e.community_name} — ${e.description || ''}`)}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    res.set('Content-Type', 'text/calendar; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="event-${e.id}.ics"`);
+    res.send(body + '\r\n');
   });
 
   // ---------- dashboards ----------
@@ -439,7 +593,7 @@ function createApp({ db, config }) {
   });
 
   app.get('/api/organizer/events', requireAuth, requireRole('organizer'), (req, res) => {
-    const rows = db.prepare(`${EVENT_SELECT} WHERE c.owner_id = ? ORDER BY e.event_date, e.event_time`).all(-1, -1, req.user.id);
+    const rows = db.prepare(`${EVENT_SELECT} WHERE c.owner_id = ? ORDER BY e.event_date, e.event_time`).all(...eventParams(req.user.id), req.user.id);
     res.json({ events: rows.map(e => shapeEvent(e, req.user.id)) });
   });
 
@@ -451,11 +605,121 @@ function createApp({ db, config }) {
 
   app.get('/api/participant/events', requireAuth, requireRole('participant'), (req, res) => {
     const rows = db.prepare(`${EVENT_SELECT} JOIN event_registrations rr ON rr.event_id = e.id AND rr.user_id = ? ORDER BY e.event_date, e.event_time`)
-      .all(req.user.id, req.user.id, req.user.id);
+      .all(...eventParams(req.user.id), req.user.id);
     const events = rows.map(e => shapeEvent(e, req.user.id));
     // Upcoming first (soonest first), then past events (most recent first).
     events.sort((a, b) => (a.is_past - b.is_past) || (a.is_past ? (b.event_date + b.event_time).localeCompare(a.event_date + a.event_time) : 0));
     res.json({ events });
+  });
+
+  // ---------- organizer analytics ----------
+  /**
+   * All figures for the organizer's own communities:
+   *  summary KPIs, per-event registrations / attendance / revenue / rating,
+   *  monthly trend, revenue by community, member growth and upcoming fill rate.
+   * Revenue = ticket price recorded at registration (payments are not processed online).
+   */
+  app.get('/api/organizer/analytics', requireAuth, requireRole('organizer'), (req, res) => {
+    const months = Math.min(Math.max(Number(req.query.months) || 6, 3), 12);
+    const events = db.prepare(`${EVENT_SELECT} WHERE c.owner_id = ? ORDER BY e.event_date, e.event_time`)
+      .all(...eventParams(req.user.id), req.user.id).map(e => shapeEvent(e, req.user.id));
+    const communities = db.prepare(`SELECT c.id, c.name, c.category,
+        (SELECT COUNT(*) FROM memberships m WHERE m.community_id = c.id) AS members
+      FROM communities c WHERE c.owner_id = ? ORDER BY c.name`).all(req.user.id);
+    const past = events.filter(e => e.has_started);
+    const upcoming = events.filter(e => !e.has_started);
+    const sum = (list, k) => list.reduce((n, x) => n + (x[k] || 0), 0);
+    const pastRegs = sum(past, 'registration_count');
+    const pastAttended = sum(past, 'attended_count');
+    const ratingTotal = past.reduce((n, e) => n + (e.avg_rating || 0) * e.rating_count, 0);
+    const ratingCount = sum(past, 'rating_count');
+
+    // Month buckets: oldest → current
+    const monthKeys = [];
+    const d = new Date(); d.setDate(1);
+    for (let i = months - 1; i >= 0; i--) {
+      const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
+      monthKeys.push(`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`);
+    }
+    const monthly = monthKeys.map(key => {
+      const inMonth = past.filter(e => e.event_date.startsWith(key));
+      return {
+        month: key, events: inMonth.length,
+        registrations: sum(inMonth, 'registration_count'), attended: sum(inMonth, 'attended_count'),
+        revenue_pence: sum(inMonth, 'revenue_pence')
+      };
+    });
+
+    const joins = db.prepare(`SELECT substr(m.joined_at, 1, 7) AS month, COUNT(*) AS n FROM memberships m
+      JOIN communities c ON c.id = m.community_id WHERE c.owner_id = ? GROUP BY month`).all(req.user.id);
+    const before = joins.filter(j => j.month && j.month < monthKeys[0]).reduce((n, j) => n + j.n, 0);
+    let running = before;
+    const memberGrowth = monthKeys.map(key => {
+      const added = joins.find(j => j.month === key)?.n || 0;
+      running += added;
+      return { month: key, new_members: added, total_members: running };
+    });
+
+    const byCommunity = communities.map(c => {
+      const list = events.filter(e => e.community_id === c.id);
+      const p = list.filter(e => e.has_started);
+      const regs = sum(p, 'registration_count');
+      return {
+        id: c.id, name: c.name, category: c.category, members: c.members, events: list.length,
+        registrations: sum(list, 'registration_count'), attended: sum(p, 'attended_count'),
+        attendance_rate: regs ? Math.round(sum(p, 'attended_count') / regs * 100) : null,
+        revenue_pence: sum(list, 'revenue_pence')
+      };
+    });
+
+    const perEvent = past.map(e => ({
+      id: e.id, name: e.name, community_name: e.community_name, event_date: e.event_date,
+      registered: e.registration_count, attended: e.attended_count,
+      attendance_rate: e.registration_count ? Math.round(e.attended_count / e.registration_count * 100) : null,
+      revenue_pence: e.revenue_pence, price_pence: e.price_pence, capacity: e.capacity,
+      avg_rating: e.avg_rating, rating_count: e.rating_count
+    }));
+
+    res.json({
+      generated_at: new Date().toISOString(),
+      summary: {
+        communities: communities.length, members: sum(communities, 'members'),
+        events_total: events.length, events_past: past.length, events_upcoming: upcoming.length,
+        registrations_total: sum(events, 'registration_count'), registrations_past: pastRegs,
+        attended: pastAttended, attendance_rate: pastRegs ? Math.round(pastAttended / pastRegs * 100) : null,
+        revenue_pence: sum(events, 'revenue_pence'), revenue_past_pence: sum(past, 'revenue_pence'),
+        revenue_upcoming_pence: sum(upcoming, 'revenue_pence'),
+        avg_rating: ratingCount ? Math.round(ratingTotal / ratingCount * 10) / 10 : null, ratings: ratingCount
+      },
+      monthly, member_growth: memberGrowth, by_community: byCommunity, per_event: perEvent,
+      upcoming: upcoming.map(e => ({
+        id: e.id, name: e.name, community_name: e.community_name, event_date: e.event_date, event_time: e.event_time,
+        registered: e.registration_count, capacity: e.capacity, revenue_pence: e.revenue_pence,
+        fill_rate: e.capacity ? Math.round(e.registration_count / e.capacity * 100) : null
+      }))
+    });
+  });
+
+  // ---------- recommendations for participants ----------
+  app.get('/api/participant/recommendations', requireAuth, requireRole('participant'), (req, res) => {
+    const uid = req.user.id;
+    const joined = db.prepare('SELECT c.category, c.latitude, c.longitude FROM memberships m JOIN communities c ON c.id = m.community_id WHERE m.user_id = ?').all(uid);
+    const rows = db.prepare(`${COMMUNITY_SELECT} WHERE c.status = 'published' AND c.id NOT IN (SELECT community_id FROM memberships WHERE user_id = ?)`)
+      .all(...communityParams(uid), uid);
+    const cats = new Map();
+    joined.forEach(j => cats.set(j.category, (cats.get(j.category) || 0) + 1));
+    const centre = joined.length ? { lat: joined.reduce((n, j) => n + j.latitude, 0) / joined.length, lon: joined.reduce((n, j) => n + j.longitude, 0) / joined.length } : null;
+    const scored = rows.map(c => {
+      const dist = centre ? haversineMiles(centre.lat, centre.lon, c.latitude, c.longitude) : null;
+      const reasons = [];
+      let score = c.member_count * 0.2 + c.upcoming_event_count * 1.5;
+      if (cats.has(c.category)) { score += 10 * cats.get(c.category); reasons.push(`You like ${c.category}`); }
+      if (dist != null) { score += Math.max(0, 8 - dist / 3); if (dist <= 10) reasons.push('Near your communities'); }
+      if (c.upcoming_event_count) reasons.push(`${c.upcoming_event_count} upcoming event${c.upcoming_event_count === 1 ? '' : 's'}`);
+      if (!reasons.length) reasons.push('Popular with members');
+      return { c: { ...c, distance_miles: dist }, score, reasons };
+    }).sort((a, b) => b.score - a.score).slice(0, 3);
+    res.json({ communities: scored.map(s => ({ ...shapeCommunity(s.c, uid), reasons: s.reasons.slice(0, 2) })) });
   });
 
   // ---------- image uploads ----------

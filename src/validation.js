@@ -116,6 +116,30 @@ function id(value, label = 'ID') {
   return Number(s);
 }
 
+/** Ticket price in pounds (e.g. "5", "4.50", 0) → whole pence. Empty = free. */
+function pricePence(value) {
+  if (value === undefined || value === null || value === '') return 0;
+  const s = String(value).trim().replace(/^£/, '');
+  if (!/^\d{1,4}(\.\d{1,2})?$/.test(s)) throw new ValidationError('Enter the ticket price in pounds, e.g. 0, 5 or 7.50.', 'price');
+  const pence = Math.round(Number(s) * 100);
+  if (pence > 50000) throw new ValidationError('Ticket price must be £500 or less.', 'price');
+  return pence;
+}
+
+/** Maximum number of places. Empty = unlimited (null). */
+function capacity(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const s = String(value).trim();
+  if (!/^\d{1,5}$/.test(s) || Number(s) < 1 || Number(s) > 10000) throw new ValidationError('Capacity must be a whole number between 1 and 10000, or left empty for unlimited.', 'capacity');
+  return Number(s);
+}
+
+function rating(value) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 5) throw new ValidationError('Choose a rating from 1 to 5 stars.', 'rating');
+  return n;
+}
+
 function normalisePostcode(value) {
   const m = UK_POSTCODE_RE.exec(String(value || '').trim());
   return m ? `${m[1].toUpperCase()} ${m[2].toUpperCase()}` : '';
@@ -123,6 +147,6 @@ function normalisePostcode(value) {
 
 module.exports = {
   CATEGORIES, ROLES, UK_BOUNDS, ValidationError,
-  text, email, password, role, category, coordinates, imageUrl, eventDate, eventTime, id,
+  text, email, password, role, category, coordinates, imageUrl, eventDate, eventTime, id, pricePence, capacity, rating,
   isValidCoordinate, inUk, todayIso, nowTime, normalisePostcode, UK_POSTCODE_RE
 };

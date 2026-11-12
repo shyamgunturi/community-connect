@@ -58,12 +58,19 @@ Categories: `Technology`, `Sports & Fitness`, `Social`, `Faith`, `Volunteering`,
 |---|---|---|---|
 | GET | `/events/public` | 🌐 (optional login) | Upcoming published events, soonest first. Query: `community_id`, `limit` (≤200). `/events` is an alias. |
 | GET | `/events/:id` | 🌐 (optional login) | `{ event }` (also returns past events, with `is_past: true`) |
-| POST | `/events` | 🛠 owner of community | `{ community_id, name, event_date: "YYYY-MM-DD", event_time: "HH:MM", venue, description?, image_url? }` → **201** `{ event }`. The date must be real, today or later (up to 2 years); a time today must not have passed. |
+| POST | `/events` | 🛠 owner of community | `{ community_id, name, event_date: "YYYY-MM-DD", event_time: "HH:MM", venue, description?, image_url?, price? (pounds, e.g. "7.50"), capacity? }` → **201** `{ event }`. The date must be real, today or later (up to 2 years); a time today must not have passed. |
+| PUT | `/events/:id` | 🛠 owner | Edit an event (same body as POST, without `community_id`). Capacity can't go below current bookings. |
+| POST | `/events/:id/repeat` | 🛠 owner | **Run again**: copies the event to the next free week (or `{ event_date }`) → **201** `{ event }` |
 | DELETE | `/events/:id` | 🛠 owner | Deletes the event and its registrations |
-| POST | `/events/:id/register` | 🧑 member | **201** registered, **200** `{ already_registered: true }`, **403** `MEMBERSHIP_REQUIRED`, **400** past event |
-| DELETE | `/events/:id/register` | 🧑 | Cancel registration |
+| GET | `/events/:id/calendar.ics` | 🌐 | Add-to-calendar file (iCalendar) |
+| GET | `/events/:id/attendees` | 🛠 owner | `{ event, attendees: [{ user_id, name, email, attended, amount_pence, rating }] }` |
+| PUT | `/events/:id/attendees/:userId` | 🛠 owner | `{ attended: true\|false }` — only after the event has started |
+| POST | `/events/:id/attendees/all` | 🛠 owner | Mark every registered person as attended |
+| POST | `/events/:id/feedback` | 🧑 attended | `{ rating: 1-5, comment? }` — one rating per person, can be updated |
+| POST | `/events/:id/register` | 🧑 member | **201** registered (records the ticket price), **200** `{ already_registered: true }`, **403** `MEMBERSHIP_REQUIRED`, **409** `EVENT_FULL`, **400** past event |
+| DELETE | `/events/:id/register` | 🧑 | Cancel registration (not after the event has started) |
 
-Event object: `id, community_id, name, event_date, event_time, venue, description, image_url, community_name, community_town, community_category, community_image_url, registration_count, registered, is_member, is_owner, is_past`.
+Event object: `id, community_id, name, event_date, event_time, venue, description, image_url, price_pence, capacity, spots_left, is_full, avg_rating, rating_count, community_name, community_town, community_category, community_image_url, registration_count, registered, is_member, is_owner, is_past, has_started, attended, my_rating` — plus `attended_count, revenue_pence` for the event's organizer only.
 
 ## Dashboards
 | Method | Path | Access | Returns |
@@ -72,6 +79,8 @@ Event object: `id, community_id, name, event_date, event_time, venue, descriptio
 | GET | `/organizer/events` | 🛠 | Events of your communities with `registration_count` |
 | GET | `/participant/communities` | 🧑 | Communities you joined |
 | GET | `/participant/events` | 🧑 | Events you registered for (upcoming first, then past) |
+| GET | `/participant/recommendations` | 🧑 | Up to 3 communities you haven't joined, with `reasons` |
+| GET | `/organizer/analytics?months=6\|12` | 🛠 | `summary` (revenue, registrations, attendance rate, rating, members…), `per_event`, `monthly` (registrations, attended, revenue), `member_growth`, `by_community`, `upcoming` (fill rate) |
 
 ## Uploads
 | Method | Path | Access | Notes |

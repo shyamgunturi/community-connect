@@ -99,6 +99,7 @@
       <section class="joined-section dashboard-section" id="dashboardSection">
         <div class="results-heading"><div><h3>My participant dashboard</h3><p>Your communities and event registrations, saved to your account.</p></div></div>
         <div class="dashboard-locked hidden" id="dashboardLocked"><div><strong>Sign in to see your communities and events</strong><p>Exploring is open to everyone. Create a free participant account when you want to join a community or register for an event.</p></div><div class="dashboard-locked-actions"><button class="primary-btn" type="button" id="dashboardRegister">Create participant account</button><button class="outline-btn" type="button" id="dashboardLogin">Log in</button></div></div>
+        <div class="recommend-block hidden" id="recommendBlock"><h4 class="dash-title">Recommended for you</h4><div id="recommendations" class="recommend-grid"></div></div>
         <div class="dashboard-grid" id="dashboardContent">
           <div><h4 class="dash-title">Joined communities</h4><div id="joinedCommunities" class="joined-list"><p class="muted">You haven't joined a community yet.</p></div></div>
           <div><h4 class="dash-title">My registered events</h4><div id="registeredEvents" class="event-list"><p class="muted">You haven't registered for any events yet.</p></div></div>
@@ -110,9 +111,11 @@
       <div class="view-heading"><div><p class="eyebrow">ORGANIZER SPACE</p><h2>Build and manage your community</h2><p id="organizerIntro">Take a look around. Create an organizer account when you're ready to publish and manage a community.</p></div><span class="view-pill organizer-pill">Organizer</span></div>
       <div class="preview-stats organizer-stats hidden" id="organizerStats"></div>
       <div class="organizer-layout">
-        <aside class="organizer-sidebar"><div class="sidebar-title">ORGANIZER MENU</div><button class="side-link selected" data-panel="createCommunityPanel" type="button">＋ Create community</button><button class="side-link" data-panel="manageCommunityPanel" type="button">▦ My communities</button><button class="side-link" data-panel="createEventPanel" type="button">＋ Publish an event</button><button class="side-link" data-panel="organizerEventsPanel" type="button">▤ My events</button><div class="sidebar-tip"><strong>Organizer tip</strong><p>Publish your community first. You can then add events that members can discover.</p></div></aside>
+        <aside class="organizer-sidebar"><div class="sidebar-title">ORGANIZER MENU</div><button class="side-link" data-panel="analyticsPanel" type="button">◔ Analytics</button><button class="side-link selected" data-panel="createCommunityPanel" type="button">＋ Create community</button><button class="side-link" data-panel="manageCommunityPanel" type="button">▦ My communities</button><button class="side-link" data-panel="createEventPanel" type="button">＋ Publish an event</button><button class="side-link" data-panel="organizerEventsPanel" type="button">▤ My events</button><div class="sidebar-tip"><strong>Organizer tip</strong><p>Publish your community first. You can then add events that members can discover.</p></div></aside>
         <div class="organizer-content">
           <div class="preview-banner hidden" id="organizerPreviewBanner"><strong>Organizer workspace preview</strong><span>Explore the tools below. Create an organizer account when you're ready to publish.</span></div>
+          <section class="organizer-panel hidden" id="analyticsPanel" aria-labelledby="analyticsTitle"><div class="panel-heading analytics-heading"><div><h3 id="analyticsTitle">Analytics</h3><p>How your events perform: registrations, attendance, revenue and ratings.</p></div><label class="analytics-range">Period <select id="analyticsMonths"><option value="6">Last 6 months</option><option value="12">Last 12 months</option></select></label></div><div id="analyticsContent" class="viz-root"><p class="muted">Loading analytics…</p></div></section>
+          <section class="organizer-panel hidden" id="attendancePanel" aria-labelledby="attendanceTitle"><div class="panel-heading"><button class="text-btn back-to-events" type="button" data-panel-link="organizerEventsPanel">← Back to my events</button><h3 id="attendanceTitle">Attendance</h3><p id="attendanceIntro">Tick the people who came. Attendance feeds your analytics.</p></div><div id="attendanceContent"></div></section>
           <section class="organizer-panel" id="createCommunityPanel"><div class="panel-heading"><h3 id="communityFormTitle">Create a community</h3><p>Give people a clear idea of what your group is about. Published communities appear in public discovery straight away.</p></div>
             <form id="communityForm" class="form-grid" novalidate>
               <div class="field-block"><label for="communityName">Community name *</label><input id="communityName" name="name" required maxlength="100" placeholder="e.g. Middlesbrough Tech Meetup" /></div>
@@ -127,18 +130,18 @@
               <div class="form-actions full-field"><button class="primary-btn" type="submit" id="communitySubmit">Publish community</button><button class="outline-btn hidden" type="button" id="cancelEditBtn">Cancel editing</button><span class="form-message" id="communityMessage" role="status"></span></div>
             </form></section>
           <section class="organizer-panel hidden" id="manageCommunityPanel"><div class="panel-heading"><h3>My communities</h3><p>Communities you have published. Only you can edit or delete them.</p></div><div id="organizerCommunities" class="manage-list"><p class="muted">You haven't created a community yet.</p></div></section>
-          <section class="organizer-panel hidden" id="createEventPanel"><div class="panel-heading"><h3>Publish an event</h3><p>Events belong to one of your communities and appear publicly as soon as they're published.</p></div>
+          <section class="organizer-panel hidden" id="createEventPanel"><div class="panel-heading"><h3 id="eventFormTitle">Publish an event</h3><p>Events belong to one of your communities and appear publicly as soon as they're published.</p></div>
             <form id="eventForm" class="form-grid" novalidate>
               <div class="field-block full-field"><label for="eventCommunity">Community *</label><select id="eventCommunity" name="community_id" required><option value="">Choose one of your communities</option></select></div>
               <div class="field-block"><label for="eventName">Event name *</label><input id="eventName" name="name" required maxlength="100" placeholder="e.g. Monthly coding meetup" /></div>
               <div class="field-block"><label for="eventVenue">Venue *</label><input id="eventVenue" name="venue" required maxlength="150" placeholder="Where will it happen?" /></div>
               <div class="field-block"><label for="eventDate">Date *</label><input id="eventDate" name="event_date" type="date" required /></div>
               <div class="field-block"><label for="eventTime">Start time *</label><input id="eventTime" name="event_time" type="time" required /></div>
-              <div class="field-block full-field"><label for="eventDescription">Event details</label><textarea id="eventDescription" name="description" rows="3" maxlength="2000" placeholder="Tell members what to expect"></textarea></div>
+              <div class="field-block"><label for="eventPrice">Ticket price (£)</label><input id="eventPrice" name="price" type="number" min="0" max="500" step="0.01" placeholder="0 = free" inputmode="decimal" /><small>Leave empty or 0 for a free event.</small></div><div class="field-block"><label for="eventCapacity">Capacity <span class="optional">(optional)</span></label><input id="eventCapacity" name="capacity" type="number" min="1" max="10000" step="1" placeholder="Unlimited" /><small>Registration closes when the event is full.</small></div><div class="field-block full-field"><label for="eventDescription">Event details</label><textarea id="eventDescription" name="description" rows="3" maxlength="2000" placeholder="Tell members what to expect"></textarea></div>
               <div class="field-block full-field photo-field" data-photo-field="event"><label>Event photograph <span class="optional">(optional — the community photo is used otherwise)</span></label><div class="photo-picker"><div class="photo-preview empty" data-photo-preview><span>No photo selected</span></div><div class="photo-controls"><label class="outline-btn file-btn">Upload a photo<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-photo-file hidden /></label><input type="url" placeholder="…or paste an https:// image link" data-photo-url /><input type="hidden" id="eventImage" name="image_url" data-photo-value /><button type="button" class="text-btn hidden" data-photo-remove>Remove photo</button><small data-photo-status>JPG, PNG, WebP or GIF up to 4 MB.</small></div></div></div>
-              <div class="form-actions full-field"><button class="primary-btn" type="submit" id="eventSubmit">Publish event</button><span class="form-message" id="eventMessage" role="status"></span></div>
+              <div class="form-actions full-field"><button class="primary-btn" type="submit" id="eventSubmit">Publish event</button><button class="outline-btn hidden" type="button" id="cancelEventEditBtn">Cancel editing</button><span class="form-message" id="eventMessage" role="status"></span></div>
             </form></section>
-          <section class="organizer-panel hidden" id="organizerEventsPanel"><div class="panel-heading"><h3>My published events</h3><p>Events for your communities, with the number of people registered.</p></div><div id="organizerEventList" class="manage-list"><p class="muted">No events published yet.</p></div></section>
+          <section class="organizer-panel hidden" id="organizerEventsPanel"><div class="panel-heading"><h3>My published events</h3><p>Edit an event, run it again with one click, or record who attended.</p></div><div id="organizerEventList" class="manage-list"><p class="muted">No events published yet.</p></div></section>
         </div>
       </div>
     </section>
@@ -163,6 +166,7 @@
 </div>
 
 <script src="js/common.js"></script>
+<script src="js/charts.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

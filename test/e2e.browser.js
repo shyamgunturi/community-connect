@@ -11,8 +11,10 @@ const zlib = require('zlib');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 const { startFakeGeocoder, startServer, tempDir, isoDate } = require('./helpers');
+const Database = require('better-sqlite3');
 
 const SHOTS = path.join(__dirname, 'screenshots');
+fs.rmSync(SHOTS, { recursive: true, force: true });
 fs.mkdirSync(SHOTS, { recursive: true });
 const results = [];
 let currentPage = null;
@@ -68,6 +70,7 @@ function makePng(file, w, h) {
     });
     assert.ok(r.o <= 1, `horizontal overflow ${r.o}px on ${r.url}: ${r.culprits.join(', ')}`);
   };
+  const eventIdByName = async name => (await (await fetch(BASE + '/api/events/public')).json()).events.find(e => e.name === name).id;
   const count = async () => page.locator('#communityGrid .community-card').count();
 
   console.log('\nVisitor');
@@ -204,10 +207,12 @@ function makePng(file, w, h) {
   await step('publish event; it appears in My events', async () => {
     await page.fill('#eventDate', isoDate(7));
     await page.fill('#eventDescription', 'Bring a laptop. Tea provided.');
+    await page.fill('#eventPrice', '5');
+    await page.fill('#eventCapacity', '20');
     await page.click('#eventSubmit');
     await page.waitForFunction(() => /listed in public events/.test(document.getElementById('eventMessage').textContent));
     await page.click('[data-panel=organizerEventsPanel]');
-    assert.match(await page.textContent('#organizerEventList'), /Intro to JavaScript[\s\S]*0 registrations/);
+    assert.match(await page.textContent('#organizerEventList'), /Intro to JavaScript[\s\S]*0\/20 booked · £5/);
     await shot('04-organizer-events');
   });
   await step('organizer cannot use the participant space', async () => {
@@ -218,8 +223,7 @@ function makePng(file, w, h) {
   await step('new community is in public discovery and events after logout', async () => {
     await page.click('#logoutBtn');
     await page.click('#eventsNav');
-    await page.waitForSelector('#publicEvents .event-card');
-    assert.match(await page.textContent('#publicEvents'), /Intro to JavaScript/);
+    await page.waitForFunction(() => /Intro to JavaScript/.test(document.getElementById('publicEvents').textContent));
     assert.match(await page.textContent('#communityGrid'), /Linthorpe Coders/);
   });
 
@@ -244,7 +248,7 @@ function makePng(file, w, h) {
     await page.fill('#authPassword', 'Participate1');
     await page.click('#authSubmit');
     await page.waitForFunction(() => /You joined Linthorpe Coders/.test(document.getElementById('joinNote').textContent));
-    assert.match(await page.textContent('#joinPanel'), /You are part of this community/);
+    await page.waitForFunction(() => /You are part of this community/.test(document.getElementById('joinPanel').textContent));
     assert.match(await page.textContent('#communityContent'), /1 member/);
   });
   await step('register for the event from the event page', async () => {
@@ -334,6 +338,105 @@ function makePng(file, w, h) {
     assert.match(await page.textContent('#registeredEvents'), /Intro to JavaScript/);
   });
 
+
+  console.log('\nNew features — analytics, run again, attendance, ratings');
+  const login = async (email, pw) => {
+    await page.goto(BASE + '/index.html');
+    if (await page.isVisible('#logoutBtn')) { await page.click('#logoutBtn'); }
+    await page.click('#loginBtn');
+    await page.fill('#authEmail', email);
+    await page.fill('#authPassword', pw);
+    await page.click('#authSubmit');
+    await page.waitForSelector('#authModal.hidden', { state: 'attached' });
+  };
+  await step('event page shows the ticket price, places left and Add to calendar', async () => {
+    await page.goto(BASE + `/event.html?id=${await eventIdByName('Intro to JavaScript')}`);
+    await page.waitForSelector('#eventContent h1:has-text("Intro to JavaScript")');
+    const t = await page.textContent('#eventContent');
+    assert.match(t, /£5 \(pay on the day\)/);
+    assert.match(t, /18 of 20 left/);
+    const href = await page.getAttribute('.calendar-btn', 'href');
+    const ics = await (await fetch(BASE + href)).text();
+    assert.match(ics, /SUMMARY:Intro to JavaScript/);
+  });
+  await step('demo organizer opens straight onto the analytics dashboard with graphs', async () => {
+    await login('demo-organizer@communityconnect.local', 'Demo12345');
+    await page.waitForSelector('#analyticsPanel:not(.hidden) #chartPerEvent svg');
+    assert.equal(await page.locator('#analyticsContent svg').count(), 4, 'per-event bars, revenue bars, monthly line, member line');
+    assert.ok(await page.locator('#chartCommunity .viz-hrow').count() >= 5);
+    assert.ok(await page.locator('#chartUpcoming .viz-hrow').count() >= 4);
+    const kpis = await page.textContent('.kpi-row');
+    assert.match(kpis, /Ticket revenue\s*£[\d,]+/);
+    assert.match(kpis, /Attendance rate\s*\d+%/);
+    assert.match(kpis, /★ \d/);
+    await shot('14-analytics-dashboard');
+  });
+  await step('chart tooltip shows registered, attended, revenue and rating', async () => {
+    const hit = (await page.$$('#chartPerEvent rect.viz-hit'))[2];
+    await hit.scrollIntoViewIfNeeded();
+    const bb = await hit.boundingBox();
+    await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height - 30);
+    await page.waitForSelector('.viz-tooltip.show');
+    assert.match(await page.textContent('.viz-tooltip'), /Registered\s*\d+[\s\S]*Attended\s*\d+[\s\S]*% attended · £/);
+    await page.mouse.move(5, 5);
+  });
+  await step('analytics period switch and CSV download', async () => {
+    await page.selectOption('#analyticsMonths', '12');
+    await page.waitForFunction(() => document.querySelectorAll('#chartRevenue .viz-label').length === 12);
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#exportCsv')]);
+    const csv = fs.readFileSync(await dl.path(), 'utf8');
+    assert.match(csv.split('\n')[0], /Event.*Registered.*Attended.*Revenue/);
+    assert.ok(csv.split('\n').length >= 16);
+  });
+  await step('"Run again" schedules a past event for next week in one click', async () => {
+    await page.click('[data-panel=organizerEventsPanel]');
+    const item = page.locator('#organizerEventList .manage-item', { hasText: 'October Book Night' }).first();
+    await item.locator('[data-repeat]').click();
+    await page.waitForFunction(() => /is scheduled again for/.test(document.getElementById('toast').textContent));
+    const upcoming = page.locator('#organizerEventList .manage-item:not(.is-past)', { hasText: 'October Book Night' });
+    assert.equal(await upcoming.count(), 1);
+    assert.match(await upcoming.textContent(), /0\/20 booked · £3/);
+  });
+  await step('edit an upcoming event', async () => {
+    await page.locator('#organizerEventList .manage-item:not(.is-past)', { hasText: 'October Book Night' }).locator('[data-edit-event]').click();
+    assert.match(await page.textContent('#eventFormTitle'), /Edit/);
+    await page.fill('#eventVenue', 'Newcastle City Library');
+    await page.click('#eventSubmit');
+    await page.waitForFunction(() => /has been updated/.test(document.getElementById('eventMessage').textContent));
+    await page.click('[data-panel=organizerEventsPanel]');
+    assert.match(await page.textContent('#organizerEventList'), /Newcastle City Library/);
+  });
+  await step('record attendance for a past event (Priya attended)', async () => {
+    // Priya registered for a past demo event (set directly, as if she booked before it happened).
+    const db = new Database(path.join(dir, 'test.sqlite'));
+    const ev = db.prepare("SELECT id FROM events WHERE name = 'October Book Night' ORDER BY event_date LIMIT 1").get();
+    const priya = db.prepare("SELECT id FROM users WHERE email = 'priya@example.com'").get();
+    db.prepare("INSERT OR IGNORE INTO event_registrations(user_id, event_id, registered_at, amount_pence) VALUES(?, ?, datetime('now'), 300)").run(priya.id, ev.id);
+    db.close();
+    await page.locator('#organizerEventList .manage-item.is-past', { hasText: 'October Book Night' }).locator('[data-attendance]').click();
+    await page.waitForSelector('#attendancePanel:not(.hidden) .attendee');
+    const before = Number(await page.textContent('#attCount'));
+    const row = page.locator('.attendee', { hasText: 'Priya Participant' });
+    await row.locator('input').check();
+    await page.waitForFunction(n => Number(document.getElementById('attCount').textContent) === n + 1, before);
+    await page.waitForSelector('.attendee.is-in:has-text("Priya Participant")');
+    await shot('15-attendance');
+  });
+  await step('participant sees "Rate it", rates the event and gets recommendations', async () => {
+    await login('priya@example.com', 'Participate1');
+    await page.waitForSelector('#registeredEvents .event-item');
+    await page.waitForSelector('#recommendations .recommend-card');
+    assert.ok(await page.locator('#recommendations .recommend-card').count() >= 1);
+    await page.click('#registeredEvents .rate-link');
+    await page.waitForSelector('#feedbackForm');
+    await page.click('[data-star="4"]');
+    await page.fill('#feedbackComment', 'Lovely evening');
+    await page.click('#feedbackForm button[type=submit]');
+    await page.waitForFunction(() => /Thanks for your feedback/.test(document.getElementById('eventNote').textContent));
+    assert.equal(await page.locator('.star.on').count(), 4);
+    await shot('16-event-rating');
+  });
+
   console.log('\nResponsive layouts');
   for (const [label, width, height] of [['tablet', 820, 1180], ['mobile', 390, 844]]) {
     await step(`${label} (${width}px): home, discovery, community, event, organizer — no horizontal overflow`, async () => {
@@ -353,11 +456,22 @@ function makePng(file, w, h) {
       await p.goto(communityUrl);
       await p.waitForSelector('#communityContent h1');
       await noOverflow(p); await shot(`11-${label}-community`, p);
-      await p.goto(BASE + '/event.html?id=5');
+      await p.goto(BASE + `/event.html?id=${await eventIdByName('Intro to JavaScript')}`);
       await p.waitForSelector('#eventContent h1');
       await noOverflow(p); await shot(`12-${label}-event`, p);
+      await p.goto(BASE + '/index.html');
+      await p.evaluate(() => localStorage.clear());
+      await p.reload();
+      await p.click('#loginBtn');
+      await p.fill('#authEmail', 'demo-organizer@communityconnect.local');
+      await p.fill('#authPassword', 'Demo12345');
+      await p.click('#authSubmit');
+      await p.waitForSelector('#chartPerEvent svg');
+      await p.waitForTimeout(400);
+      await noOverflow(p); await shot(`14-${label}-analytics`, p);
       await p.evaluate(() => localStorage.clear());
       await p.goto(BASE + '/index.html#organizer');
+      await p.reload();
       await p.waitForSelector('#organizerView:not(.hidden)');
       await noOverflow(p); await shot(`13-${label}-organizer`, p);
       await p.close();
