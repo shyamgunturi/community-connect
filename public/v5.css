@@ -2,8 +2,7 @@
 
 /* ---------- badges ---------- */
 .cc-badges{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
-.event-card-media .cc-badges{position:absolute;right:10px;top:10px;z-index:3;justify-content:flex-end;max-width:70%;margin:0}
-.manage-item .cc-badges{margin:6px 0 0}
+.event-card-media .cc-badges{position:absolute;left:10px;bottom:10px;top:auto;right:auto;z-index:3;justify-content:flex-start;max-width:calc(100% - 20px);margin:0}.manage-item .cc-badges{margin:6px 0 0}
 .cc-badge{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;letter-spacing:.2px;padding:5px 9px;border-radius:999px;background:#fff;color:#183532;border:1px solid #dfe7e2;box-shadow:0 2px 8px #0000000f;white-space:nowrap}
 .b-featured{background:#183532;color:#fff;border-color:#183532}
 .b-flash{background:#b4471c;color:#fff;border-color:#b4471c}
