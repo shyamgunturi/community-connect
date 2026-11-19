@@ -6,6 +6,7 @@
   <meta name="description" content="Discover and join local communities with Community Connect." />
   <title>Community Connect | Find your people</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="v5.css" />
 </head>
 <body>
   <header class="site-header">
@@ -60,6 +61,12 @@
       </div>
     </section>
 
+    <section class="home-promo home-section hidden" id="homePromo" aria-labelledby="homePromoTitle">
+      <div class="section-topline"><div><p class="eyebrow">DON'T MISS OUT</p><h2 id="homePromoTitle">Hot right now</h2></div>
+        <div class="promo-tabs" role="tablist" aria-label="Promoted events"><button type="button" role="tab" class="promo-tab" data-promo-tab="trending">🔥 Trending</button><button type="button" role="tab" class="promo-tab" data-promo-tab="featured">★ Featured</button><button type="button" role="tab" class="promo-tab" data-promo-tab="deals">⚡ Deals <span class="tab-count" id="dealCount"></span></button></div></div>
+      <div class="event-card-grid" id="promoGrid"></div>
+    </section>
+
     <section class="home-events home-section" id="homeEvents" aria-labelledby="homeEventsTitle">
       <div class="section-topline"><div><p class="eyebrow">HAPPENING SOON</p><h2 id="homeEventsTitle">Upcoming public events</h2></div><button class="subtle-link" id="seeAllEvents">See all events <span>→</span></button></div>
       <div class="event-card-grid" id="homeEventGrid"><p class="muted loading-line">Loading upcoming events…</p></div>
@@ -90,8 +97,9 @@
         <div class="field-block distance-field"><label for="distanceRange">Maximum distance <strong id="distanceValue">10 miles</strong></label><input id="distanceRange" type="range" min="1" max="50" value="10" /><div class="range-labels"><span>1 mile</span><span>50 miles</span></div></div>
         <div class="field-block category-field"><label for="categoryFilter">Community type</label><select id="categoryFilter"><option value="all">All categories</option><option>Technology</option><option>Sports &amp; Fitness</option><option>Social</option><option>Faith</option><option>Volunteering</option><option>Arts &amp; Hobbies</option></select></div>
       </div>
-      <div class="results-heading"><div><h3>Communities to explore</h3><p id="resultsSummary">Showing all communities. Choose a location to filter by distance.</p></div><div class="results-actions"><button class="text-btn hidden" id="clearLocationBtn" type="button">Clear location</button><span id="communityCount" class="count-label"></span></div></div>
+      <div class="results-heading"><div><h3>Communities to explore</h3><p id="resultsSummary">Showing all communities. Choose a location to filter by distance.</p></div><div class="results-actions"><button class="text-btn hidden" id="clearLocationBtn" type="button">Clear location</button><span id="communityCount" class="count-label"></span><div class="view-toggle" role="group" aria-label="View as"><button type="button" class="active" data-view-mode="list" aria-pressed="true">▦ List</button><button type="button" data-view-mode="map" aria-pressed="false">🗺 Map</button></div></div></div>
       <div class="community-grid" id="communityGrid" aria-live="polite"></div>
+      <div class="community-map hidden" id="communityMap" aria-label="Map of communities"><div class="map-layer"></div><div class="map-controls"><button type="button" data-zoom-in aria-label="Zoom in">+</button><button type="button" data-zoom-out aria-label="Zoom out">−</button><button type="button" data-zoom-fit aria-label="Fit all communities">⤢</button></div><div class="map-popup hidden" id="mapPopup" role="dialog" aria-label="Community details"></div><span class="map-attrib">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</span></div>
       <div class="empty-state hidden" id="emptyState"><span>⌖</span><h3 id="emptyTitle">No communities in this search</h3><p id="emptyText">Try increasing the distance or choosing another category.</p><button class="outline-btn hidden" id="retryCommunities" type="button">Try again</button></div>
 
       <section class="events-section" id="eventsSection"><div class="results-heading"><div><h3>Upcoming public events</h3><p>Anyone can preview events. Join the community to register.</p></div><span id="eventCount" class="count-label"></span></div><div id="publicEvents" class="event-card-grid"><p class="muted loading-line">Loading events…</p></div></section>
@@ -115,6 +123,7 @@
         <div class="organizer-content">
           <div class="preview-banner hidden" id="organizerPreviewBanner"><strong>Organizer workspace preview</strong><span>Explore the tools below. Create an organizer account when you're ready to publish.</span></div>
           <section class="organizer-panel hidden" id="analyticsPanel" aria-labelledby="analyticsTitle"><div class="panel-heading analytics-heading"><div><h3 id="analyticsTitle">Analytics</h3><p>How your events perform: registrations, attendance, revenue and ratings.</p></div><label class="analytics-range">Period <select id="analyticsMonths"><option value="6">Last 6 months</option><option value="12">Last 12 months</option></select></label></div><div id="analyticsContent" class="viz-root"><p class="muted">Loading analytics…</p></div></section>
+          <section class="organizer-panel hidden" id="promoPanel" aria-labelledby="promoTitle"><div class="panel-heading"><button class="text-btn back-to-events" type="button" data-panel-link="organizerEventsPanel">← Back to my events</button><h3 id="promoTitle">Promo codes</h3><p id="promoIntro">Give a percentage off with a code, e.g. STUDENT20 for 20% off.</p></div><div id="promoContent"></div></section>
           <section class="organizer-panel hidden" id="attendancePanel" aria-labelledby="attendanceTitle"><div class="panel-heading"><button class="text-btn back-to-events" type="button" data-panel-link="organizerEventsPanel">← Back to my events</button><h3 id="attendanceTitle">Attendance</h3><p id="attendanceIntro">Tick the people who came. Attendance feeds your analytics.</p></div><div id="attendanceContent"></div></section>
           <section class="organizer-panel" id="createCommunityPanel"><div class="panel-heading"><h3 id="communityFormTitle">Create a community</h3><p>Give people a clear idea of what your group is about. Published communities appear in public discovery straight away.</p></div>
             <form id="communityForm" class="form-grid" novalidate>
@@ -137,7 +146,7 @@
               <div class="field-block"><label for="eventVenue">Venue *</label><input id="eventVenue" name="venue" required maxlength="150" placeholder="Where will it happen?" /></div>
               <div class="field-block"><label for="eventDate">Date *</label><input id="eventDate" name="event_date" type="date" required /></div>
               <div class="field-block"><label for="eventTime">Start time *</label><input id="eventTime" name="event_time" type="time" required /></div>
-              <div class="field-block"><label for="eventPrice">Ticket price (£)</label><input id="eventPrice" name="price" type="number" min="0" max="500" step="0.01" placeholder="0 = free" inputmode="decimal" /><small>Leave empty or 0 for a free event.</small></div><div class="field-block"><label for="eventCapacity">Capacity <span class="optional">(optional)</span></label><input id="eventCapacity" name="capacity" type="number" min="1" max="10000" step="1" placeholder="Unlimited" /><small>Registration closes when the event is full.</small></div><div class="field-block full-field"><label for="eventDescription">Event details</label><textarea id="eventDescription" name="description" rows="3" maxlength="2000" placeholder="Tell members what to expect"></textarea></div>
+              <div class="field-block full-field pricing-heading"><h4>Tickets &amp; promotion</h4><p>Set a standard price, and optionally a cheaper early-bird price that ends at a set time. A live countdown is shown to visitors.</p></div><div class="field-block"><label for="eventPrice">Standard ticket price (£)</label><input id="eventPrice" name="price" type="number" min="0" max="500" step="0.01" placeholder="0 = free" inputmode="decimal" /><small>Leave empty or 0 for a free event.</small></div><div class="field-block"><label for="eventCapacity">Capacity <span class="optional">(optional)</span></label><input id="eventCapacity" name="capacity" type="number" min="1" max="10000" step="1" placeholder="Unlimited" /><small>Registration closes when the event is full.</small></div><div class="field-block early-field"><label for="eventEarlyPrice">Early-bird price (£) <span class="optional">(optional)</span></label><input id="eventEarlyPrice" name="early_price" type="number" min="0" max="500" step="0.01" placeholder="e.g. 3.50" inputmode="decimal" /><small>Must be lower than the standard price.</small></div><div class="field-block early-field"><label for="eventEarlyUntil">Early bird ends</label><input id="eventEarlyUntil" name="early_until" type="datetime-local" /><small>Before the event starts.</small></div><div class="field-block early-field"><label for="eventEarlyLimit">Early-bird tickets <span class="optional">(optional)</span></label><input id="eventEarlyLimit" name="early_limit" type="number" min="1" max="10000" step="1" placeholder="Unlimited" /><small>e.g. first 20 tickets only.</small></div><div class="field-block full-field"><label for="eventDescription">Event details</label><textarea id="eventDescription" name="description" rows="3" maxlength="2000" placeholder="Tell members what to expect"></textarea></div>
               <div class="field-block full-field photo-field" data-photo-field="event"><label>Event photograph <span class="optional">(optional — the community photo is used otherwise)</span></label><div class="photo-picker"><div class="photo-preview empty" data-photo-preview><span>No photo selected</span></div><div class="photo-controls"><label class="outline-btn file-btn">Upload a photo<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-photo-file hidden /></label><input type="url" placeholder="…or paste an https:// image link" data-photo-url /><input type="hidden" id="eventImage" name="image_url" data-photo-value /><button type="button" class="text-btn hidden" data-photo-remove>Remove photo</button><small data-photo-status>JPG, PNG, WebP or GIF up to 4 MB.</small></div></div></div>
               <div class="form-actions full-field"><button class="primary-btn" type="submit" id="eventSubmit">Publish event</button><button class="outline-btn hidden" type="button" id="cancelEventEditBtn">Cancel editing</button><span class="form-message" id="eventMessage" role="status"></span></div>
             </form></section>
@@ -160,12 +169,13 @@
    <div class="field-block"><label for="authEmail">Email address</label><input id="authEmail" type="email" required autocomplete="email" maxlength="254"></div>
    <div class="field-block"><label for="authPassword">Password</label><input id="authPassword" type="password" required minlength="8" maxlength="128" autocomplete="current-password"><small class="hidden" id="authPasswordHint">At least 8 characters, including a letter and a number.</small></div>
    <button class="primary-btn auth-submit" id="authSubmit" type="submit">Log in</button>
+   <div class="google-block hidden" data-google-block><div class="or-divider">or</div><div class="google-slot" id="googleSlot"></div></div>
    <p class="form-message" id="authMessage" role="alert"></p><p class="auth-switch" id="authSwitch"></p>
   </form>
  </div>
 </div>
 
-<script src="js/common.js"></script>
+<script src="js/common.js"></script><script src="js/qr.js"></script><script src="js/extras.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/app.js"></script>
 </body>

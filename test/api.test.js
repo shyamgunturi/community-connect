@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
-const { startFakeGeocoder, startServer, client, tempDir, isoDate, PNG_1PX } = require('./helpers');
+const { startFakeGeocoder, startFakeStripe, startServer, client, tempDir, removeDir, isoDate, PNG_1PX } = require('./helpers');
 
 let geo, dir, srv, api;
 const S = {}; // shared state between tests (they run in order)
@@ -30,7 +30,7 @@ before(async () => {
   srv = await startServer({ dir, geocoderUrl: geo.url });
   api = client(srv.base);
 });
-after(async () => { await srv?.stop(); await geo?.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+after(async () => { await srv?.stop(); await geo?.close(); removeDir(dir); });
 
 // ---------------------------------------------------------------- health & static files
 test('health check reports ok with database', async () => {
@@ -407,20 +407,62 @@ test('events can have a ticket price and capacity; invalid values are rejected',
   S.paidEventId = r.body.event.id;
 });
 
-test('registration records the ticket price and respects capacity', async () => {
-  const r = await api('POST', `/api/events/${S.paidEventId}/register`, { token: S.part });
-  assert.equal(r.status, 201, r.text);
-  assert.match(r.body.message, /£7.50/);
-  assert.equal(dbQuery('SELECT amount_pence FROM event_registrations WHERE event_id = ?', S.paidEventId)[0].amount_pence, 750);
+const CARD_OK = { name: 'Priya Participant', card_number: '4242 4242 4242 4242', expiry: '12/35', cvc: '123' };
+
+test('paid events need online payment: checkout holds a place, demo card payment confirms it', async () => {
+  const direct = await api('POST', `/api/events/${S.paidEventId}/register`, { token: S.part });
+  assert.equal(direct.status, 402);
+  assert.equal(direct.body.code, 'PAYMENT_REQUIRED');
+  const co = await api('POST', `/api/events/${S.paidEventId}/checkout`, { token: S.part, body: {} });
+  assert.equal(co.status, 201, co.text);
+  assert.equal(co.body.mode, 'demo');
+  assert.match(co.body.checkout_url, /^\/checkout\.html\?ref=demo_[a-f0-9]{24}$/);
+  S.payRef = co.body.checkout_url.split('ref=')[1];
+  const row = dbQuery('SELECT * FROM event_registrations WHERE event_id = ?', S.paidEventId)[0];
+  assert.equal(row.payment_status, 'pending');
+  assert.equal(row.amount_pence, 750);
+  const held = (await api('GET', `/api/events/${S.paidEventId}`, { token: S.part })).body.event;
+  assert.equal(held.registered, false, 'not registered until paid');
+  assert.equal(held.spots_left, 0, 'but the place is held');
+  assert.equal(held.my_ticket.payment_status, 'pending');
+  // Capacity 1: another participant can't take the held place.
   await api('POST', `/api/communities/${S.communityId}/join`, { token: S.part2 });
-  const full = await api('POST', `/api/events/${S.paidEventId}/register`, { token: S.part2 });
+  const full = await api('POST', `/api/events/${S.paidEventId}/checkout`, { token: S.part2, body: {} });
   assert.equal(full.status, 409);
   assert.equal(full.body.code, 'EVENT_FULL');
+  // Order summary for the checkout page — only for its owner.
+  const order = await api('GET', `/api/payments/${S.payRef}`, { token: S.part });
+  assert.equal(order.status, 200);
+  assert.equal(order.body.order.amount_pence, 750);
+  assert.ok(order.body.order.expires_at);
+  assert.equal((await api('GET', `/api/payments/${S.payRef}`, { token: S.part2 })).status, 404);
+  // Card checks
+  for (const [card, field] of [[{ ...CARD_OK, card_number: '4242 4242 4242 4241' }, 'card_number'], [{ ...CARD_OK, expiry: '01/20' }, 'expiry'], [{ ...CARD_OK, cvc: '1' }, 'cvc'], [{ ...CARD_OK, name: '' }, 'name']]) {
+    const bad = await api('POST', `/api/payments/demo/${S.payRef}`, { token: S.part, body: card });
+    assert.equal(bad.status, 400, JSON.stringify(card));
+    assert.equal(bad.body.field, field);
+  }
+  const declined = await api('POST', `/api/payments/demo/${S.payRef}`, { token: S.part, body: { ...CARD_OK, card_number: '4000 0000 0000 0002' } });
+  assert.equal(declined.status, 402);
+  assert.equal(declined.body.code, 'CARD_DECLINED');
+  const paid = await api('POST', `/api/payments/demo/${S.payRef}`, { token: S.part, body: CARD_OK });
+  assert.equal(paid.status, 200, paid.text);
+  assert.equal(paid.body.order.payment_status, 'paid');
+  assert.match(paid.body.order.ticket_number, /^CC-\d{4}-\d{5}$/);
+  const after = dbQuery('SELECT * FROM event_registrations WHERE event_id = ?', S.paidEventId)[0];
+  assert.equal(after.payment_status, 'paid');
+  assert.ok(after.paid_at);
+  assert.ok(!JSON.stringify(after).includes('4242424242424242'), 'full card number is never stored');
   const pub = await api('GET', `/api/events/${S.paidEventId}`);
   assert.equal(pub.body.event.is_full, true);
   assert.equal(pub.body.event.revenue_pence, undefined, 'revenue is not shown publicly');
   const own = await api('GET', `/api/events/${S.paidEventId}`, { token: S.org });
   assert.equal(own.body.event.revenue_pence, 750);
+  const again = await api('POST', `/api/events/${S.paidEventId}/checkout`, { token: S.part, body: {} });
+  assert.equal(again.body.already_registered, true);
+  const cancel = await api('DELETE', `/api/events/${S.paidEventId}/register`, { token: S.part });
+  assert.equal(cancel.status, 400);
+  assert.equal(cancel.body.code, 'PAID_TICKET');
 });
 
 test('organizer can edit their event; capacity cannot drop below bookings; others cannot edit', async () => {
@@ -471,7 +513,7 @@ test('attendance: only after the event starts, only by the owner', async () => {
   S.pastEventId = Number(r.lastInsertRowid);
   const priya = dbQuery("SELECT id FROM users WHERE email='priya@example.com'")[0].id;
   S.priyaId = priya;
-  dbRun("INSERT INTO event_registrations(user_id, event_id, registered_at, amount_pence) VALUES(?, ?, datetime('now'), 500)", priya, S.pastEventId);
+  dbRun("INSERT INTO event_registrations(user_id, event_id, registered_at, amount_pence, list_price_pence, ticket_type, payment_status, paid_at) VALUES(?, ?, datetime('now'), 500, 500, 'standard', 'paid', datetime('now'))", priya, S.pastEventId);
   const list = await api('GET', `/api/events/${S.pastEventId}/attendees`, { token: S.org });
   assert.equal(list.status, 200);
   assert.equal(list.body.attendees.length, 1);
@@ -546,6 +588,181 @@ test('participants get community recommendations they have not joined', async ()
   assert.equal((await api('GET', '/api/participant/recommendations', { token: S.org })).status, 403);
 });
 
+
+// ---------------------------------------------------------------- v4: early bird, promo codes, payments
+const localIn = days => `${isoDate(days)}T23:59`;
+
+test('early-bird pricing: validation, current price, countdown data', async () => {
+  const base = { community_id: S.communityId, name: 'Early Bird Gala', event_date: isoDate(20), event_time: '19:00', venue: 'Main Hall', price: '10' };
+  for (const [extra, field] of [
+    [{ early_price: '12', early_until: localIn(5) }, 'early_price'],          // not cheaper
+    [{ early_price: '10', early_until: localIn(5) }, 'early_price'],          // equal
+    [{ early_price: '6' }, 'early_until'],                                      // missing end
+    [{ early_price: '6', early_until: localIn(-1) }, 'early_until'],          // in the past
+    [{ early_price: '6', early_until: localIn(25) }, 'early_until'],          // after the event
+    [{ early_price: '6', early_until: 'tomorrow' }, 'early_until'],
+    [{ early_price: '6', early_until: localIn(5), early_limit: '0' }, 'early_limit'],
+    [{ price: '', early_price: '6', early_until: localIn(5) }, 'price']       // free event can't have early bird
+  ]) {
+    const r = await api('POST', '/api/events', { token: S.org, body: { ...base, ...extra } });
+    assert.equal(r.status, 400, `${JSON.stringify(extra)} → ${r.text}`);
+    assert.equal(r.body.field, field);
+  }
+  const r = await api('POST', '/api/events', { token: S.org, body: { ...base, early_price: '6', early_until: localIn(5), early_limit: '2', capacity: '50' } });
+  assert.equal(r.status, 201, r.text);
+  const e = r.body.event;
+  S.galaId = e.id;
+  assert.equal(e.early_active, true);
+  assert.equal(e.current_price_pence, 600);
+  assert.equal(e.ticket_type_now, 'early_bird');
+  assert.equal(e.early_left, 2);
+  assert.equal(e.early_until, localIn(5));
+  assert.equal(e.starts_at, `${isoDate(20)}T19:00`);
+});
+
+test('promo codes: organizer manages them; quote applies them; limits enforced', async () => {
+  assert.equal((await api('POST', `/api/events/${S.galaId}/promo-codes`, { token: S.org2, body: { code: 'HACK', percent_off: 90 } })).status, 403);
+  assert.equal((await api('POST', `/api/events/${S.galaId}/promo-codes`, { token: S.part, body: { code: 'HACK', percent_off: 90 } })).status, 403);
+  for (const [body, field] of [[{ code: 'ab', percent_off: 10 }, 'code'], [{ code: 'BAD CODE', percent_off: 10 }, 'code'], [{ code: 'OK10', percent_off: 2 }, 'percent_off'], [{ code: 'OK10', percent_off: 120 }, 'percent_off']]) {
+    const r = await api('POST', `/api/events/${S.galaId}/promo-codes`, { token: S.org, body });
+    assert.equal(r.status, 400, JSON.stringify(body));
+    assert.equal(r.body.field, field);
+  }
+  const c = await api('POST', `/api/events/${S.galaId}/promo-codes`, { token: S.org, body: { code: 'student50', percent_off: 50, max_uses: 1 } });
+  assert.equal(c.status, 201, c.text);
+  assert.equal(c.body.promo_code.code, 'STUDENT50');
+  S.promoId = c.body.promo_code.id;
+  assert.equal((await api('POST', `/api/events/${S.galaId}/promo-codes`, { token: S.org, body: { code: 'STUDENT50', percent_off: 10 } })).status, 409);
+  await api('POST', `/api/events/${S.galaId}/promo-codes`, { token: S.org, body: { code: 'FREEPASS', percent_off: 100 } });
+  const q = await api('GET', `/api/events/${S.galaId}/quote?promo_code=student50`);
+  assert.equal(q.status, 200);
+  assert.deepEqual({ t: q.body.quote.ticket_type, list: q.body.quote.list_price_pence, d: q.body.quote.discount_pence, a: q.body.quote.amount_pence }, { t: 'early_bird', list: 600, d: 300, a: 300 });
+  const bad = await api('GET', `/api/events/${S.galaId}/quote?promo_code=NOPE`);
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.field, 'promo_code');
+  const list = await api('GET', `/api/events/${S.galaId}/promo-codes`, { token: S.org });
+  assert.deepEqual(list.body.promo_codes.map(p => p.code), ['FREEPASS', 'STUDENT50']);
+  assert.equal((await api('GET', `/api/events/${S.galaId}/promo-codes`, { token: S.org2 })).status, 403);
+  assert.equal((await api('GET', `/api/events/${S.galaId}`)).body.event.has_promo_codes, true);
+});
+
+test('checkout with promo; max uses; 100% promo books without payment; early-bird limit switches to standard', async () => {
+  const co = await api('POST', `/api/events/${S.galaId}/checkout`, { token: S.part, body: { promo_code: 'STUDENT50' } });
+  assert.equal(co.status, 201, co.text);
+  assert.equal(co.body.quote.amount_pence, 300);
+  const ref = co.body.checkout_url.split('ref=')[1];
+  // Re-opening checkout with the same code doesn't count against the user's own hold.
+  const again = await api('POST', `/api/events/${S.galaId}/checkout`, { token: S.part, body: { promo_code: 'STUDENT50' } });
+  assert.equal(again.status, 201, again.text);
+  const ref2 = again.body.checkout_url.split('ref=')[1];
+  assert.notEqual(ref2, ref);
+  assert.equal((await api('GET', `/api/payments/${ref}`, { token: S.part })).status, 404, 'old reference replaced');
+  const paid = await api('POST', `/api/payments/demo/${ref2}`, { token: S.part, body: CARD_OK });
+  assert.equal(paid.body.order.amount_pence, 300);
+  assert.equal(paid.body.order.ticket_type, 'early_bird');
+  assert.equal(paid.body.order.promo_code, 'STUDENT50');
+  // STUDENT50 had max_uses 1
+  const used = await api('POST', `/api/events/${S.galaId}/checkout`, { token: S.part2, body: { promo_code: 'STUDENT50' } });
+  assert.equal(used.status, 400);
+  assert.match(used.body.error, /fully used/);
+  // 100% code → free ticket, no checkout
+  const free = await api('POST', `/api/events/${S.galaId}/checkout`, { token: S.part2, body: { promo_code: 'FREEPASS' } });
+  assert.equal(free.status, 201, free.text);
+  assert.equal(free.body.registered, true);
+  assert.equal(free.body.checkout_url, undefined);
+  const rows = dbQuery("SELECT ticket_type, payment_status, amount_pence FROM event_registrations WHERE event_id = ? ORDER BY amount_pence DESC", S.galaId);
+  assert.deepEqual(rows.map(r => ({ ...r })), [{ ticket_type: 'early_bird', payment_status: 'paid', amount_pence: 300 }, { ticket_type: 'early_bird', payment_status: 'free', amount_pence: 0 }]);
+  // early_limit was 2 → both early-bird tickets gone, price is now standard
+  const e = (await api('GET', `/api/events/${S.galaId}`)).body.event;
+  assert.equal(e.early_active, false);
+  assert.equal(e.early_left, 0);
+  assert.equal(e.current_price_pence, 1000);
+  assert.equal(e.ticket_type_now, 'standard');
+});
+
+test('unpaid holds expire and free the place', async () => {
+  const r = await api('POST', '/api/events', { token: S.org, body: { community_id: S.communityId, name: 'One Seat Dinner', event_date: isoDate(15), event_time: '19:00', venue: 'Bistro', price: '20', capacity: '1' } });
+  const id = r.body.event.id;
+  assert.equal((await api('POST', `/api/events/${id}/checkout`, { token: S.part, body: {} })).status, 201);
+  assert.equal((await api('POST', `/api/events/${id}/checkout`, { token: S.part2, body: {} })).status, 409, 'held');
+  dbRun("UPDATE event_registrations SET registered_at = datetime('now', '-45 minutes') WHERE event_id = ?", id);
+  await new Promise(res => setTimeout(res, 21000)); // cleanup runs at most every 20 s
+  const next = await api('POST', `/api/events/${id}/checkout`, { token: S.part2, body: {} });
+  assert.equal(next.status, 201, 'expired hold released, place available again');
+  assert.equal(dbQuery('SELECT COUNT(*) n FROM event_registrations WHERE event_id = ?', id)[0].n, 1);
+  // Releasing a hold by hand
+  assert.equal((await api('DELETE', `/api/events/${id}/register`, { token: S.part2 })).status, 200);
+  assert.equal(dbQuery('SELECT COUNT(*) n FROM event_registrations WHERE event_id = ?', id)[0].n, 0);
+});
+
+test('"Run again" also copies early-bird timing and promo codes', async () => {
+  const r = await api('POST', `/api/events/${S.galaId}/repeat`, { token: S.org, body: {} });
+  assert.equal(r.status, 201, r.text);
+  const e = r.body.event;
+  assert.equal(e.early_price_pence, 600);
+  assert.equal(e.early_until, localIn(12), 'same gap before the event (15 days before → 15 days before the new date)');
+  assert.equal(e.early_left, 2, 'early-bird allocation starts fresh');
+  const codes = await api('GET', `/api/events/${e.id}/promo-codes`, { token: S.org });
+  assert.deepEqual(codes.body.promo_codes.map(c => [c.code, c.uses]), [['FREEPASS', 0], ['STUDENT50', 0]]);
+});
+
+test('analytics: sales by ticket type and promo code usage (paid only)', async () => {
+  const r = await api('GET', '/api/organizer/analytics', { token: S.org });
+  const byType = Object.fromEntries(r.body.sales_by_type.map(t => [t.ticket_type, t]));
+  assert.equal(byType.early_bird.tickets, 2);
+  assert.equal(byType.early_bird.revenue_pence, 300);
+  assert.equal(byType.early_bird.discount_pence, 300);
+  assert.ok(r.body.promo_usage.some(p => p.code === 'STUDENT50' && p.uses === 1 && p.discount_pence === 300));
+  assert.equal(r.body.payment_mode, 'demo');
+});
+
+test('Stripe mode: creates a Checkout Session and confirms payment with Stripe', async () => {
+  const stripe = await startFakeStripe();
+  const d5 = tempDir();
+  const s5 = await startServer({ dir: d5, geocoderUrl: geo.url, env: { STRIPE_SECRET_KEY: 'sk_test_fake', STRIPE_API_URL: stripe.url, PUBLIC_URL: 'https://cc.example.org', SEED_DEMO_DATA: 'false' } });
+  try {
+    const c = client(s5.base);
+    const org = (await c('POST', '/api/auth/register', { body: { name: 'Org S', email: 'orgs@example.com', password: 'Organise123', role: 'organizer' } })).body.token;
+    const par = (await c('POST', '/api/auth/register', { body: { name: 'Pat S', email: 'pats@example.com', password: 'Participate1', role: 'participant' } })).body.token;
+    const com = (await c('POST', '/api/communities', { token: org, body: { name: 'Stripe Club', category: 'Social', description: 'Testing Stripe payments.', town: 'Middlesbrough', latitude: 54.57, longitude: -1.23 } })).body.community;
+    const ev = (await c('POST', '/api/events', { token: org, body: { community_id: com.id, name: 'Paid Night', event_date: isoDate(9), event_time: '20:00', venue: 'Hall', price: '12.50' } })).body.event;
+    await c('POST', `/api/communities/${com.id}/join`, { token: par });
+    assert.equal((await c('GET', `/api/events/${ev.id}`)).body.event.payment_mode, 'stripe');
+    const co = await c('POST', `/api/events/${ev.id}/checkout`, { token: par, body: {} });
+    assert.equal(co.status, 201, co.text);
+    assert.equal(co.body.mode, 'stripe');
+    assert.match(co.body.checkout_url, /^https:\/\/checkout\.stripe\.test\/pay\/cs_test_1$/);
+    const form = stripe.requests[0];
+    assert.equal(form.mode, 'payment');
+    assert.equal(form['line_items[0][price_data][currency]'], 'gbp');
+    assert.equal(form['line_items[0][price_data][unit_amount]'], '1250');
+    assert.equal(form.success_url, 'https://cc.example.org/payment.html?session_id={CHECKOUT_SESSION_ID}');
+    assert.equal(form.customer_email, 'pats@example.com');
+    assert.equal((await c('POST', '/api/payments/demo/whatever', { token: par, body: CARD_OK })).status, 400, 'demo payments off in Stripe mode');
+    const notYet = await c('POST', '/api/payments/stripe/confirm', { token: par, body: { session_id: 'cs_test_1' } });
+    assert.equal(notYet.status, 402);
+    stripe.markPaid('cs_test_1');
+    const ok = await c('POST', '/api/payments/stripe/confirm', { token: par, body: { session_id: 'cs_test_1' } });
+    assert.equal(ok.status, 200, ok.text);
+    assert.equal(ok.body.order.payment_status, 'paid');
+    assert.equal(ok.body.order.amount_pence, 1250);
+    assert.equal((await c('GET', `/api/events/${ev.id}`, { token: par })).body.event.registered, true);
+    assert.equal((await c('POST', '/api/payments/stripe/confirm', { token: par, body: { session_id: 'bad id' } })).status, 400);
+  } finally { await s5.stop(); await stripe.close(); removeDir(d5); }
+});
+
+test('leaving a community keeps paid tickets', async () => {
+  const before = dbQuery("SELECT COUNT(*) n FROM event_registrations r JOIN users u ON u.id = r.user_id WHERE u.email = 'priya@example.com' AND r.payment_status = 'paid'")[0].n;
+  assert.ok(before >= 2);
+  const left = await api('DELETE', `/api/communities/${S.communityId}/join`, { token: S.part });
+  assert.equal(left.status, 200);
+  assert.match(left.body.message, /paid tickets are kept/);
+  assert.equal(dbQuery("SELECT COUNT(*) n FROM event_registrations r JOIN users u ON u.id = r.user_id WHERE u.email = 'priya@example.com' AND r.payment_status = 'paid'")[0].n, before);
+  await api('POST', `/api/communities/${S.communityId}/join`, { token: S.part });
+  assert.equal(dbQuery("SELECT COUNT(*) n FROM event_registrations WHERE event_id = ? AND user_id = ?", S.eventId, S.priyaId)[0].n, 0, 'free registration was cancelled');
+  assert.equal((await api('POST', `/api/events/${S.eventId}/register`, { token: S.part })).status, 201, 're-register for later tests');
+});
+
 // ---------------------------------------------------------------- malformed requests
 test('malformed and oversized requests are handled safely', async () => {
   const bad = await api('POST', '/api/auth/login', { raw: '{"email":' });
@@ -567,7 +784,7 @@ test('data persists after the server restarts and users can log in again', async
   const t = login.body.token;
   assert.deepEqual((await api('GET', '/api/participant/communities', { token: t })).body.communities.map(c => c.id), [S.communityId]);
   const regs = (await api('GET', '/api/participant/events', { token: t })).body.events.map(e => e.id);
-  for (const id of [S.eventId, S.paidEventId, S.pastEventId]) assert.ok(regs.includes(id), `registration ${id} kept`);
+  for (const id of [S.eventId, S.paidEventId, S.pastEventId]) assert.ok(regs.includes(id), `registration ${id} kept; got ${regs} db ${JSON.stringify(dbQuery("SELECT r.event_id, r.payment_status, u.email FROM event_registrations r JOIN users u ON u.id = r.user_id WHERE u.email = 'priya@example.com'"))}`);
   assert.equal(dbQuery('SELECT rating FROM event_feedback WHERE event_id = ?', S.pastEventId)[0].rating, 5, 'rating kept');
   assert.equal(dbQuery('SELECT attended FROM event_registrations WHERE event_id = ?', S.pastEventId)[0].attended, 1, 'attendance kept');
   assert.equal((await api('GET', '/api/organizer/communities', { token: S.org })).status, 200, 'earlier token still valid after restart');
@@ -612,7 +829,7 @@ test('location search falls back gracefully when the geocoding service is down',
     assert.equal(unknown.status, 503);
     assert.match(unknown.body.error, /unavailable/);
     assert.equal((await c('GET', '/api/communities')).body.communities.length, 0, 'SEED_DEMO_DATA=false starts empty');
-  } finally { await down.stop(); fs.rmSync(d2, { recursive: true, force: true }); }
+  } finally { await down.stop(); removeDir(d2); }
 });
 
 test('a damaged database file is reported clearly and left untouched', async () => {
@@ -622,7 +839,7 @@ test('a damaged database file is reported clearly and left untouched', async () 
   const beforeBytes = fs.readFileSync(file);
   await assert.rejects(startServer({ dir: d3, geocoderUrl: geo.url }), /Could not open the database/);
   assert.ok(fs.readFileSync(file).equals(beforeBytes));
-  fs.rmSync(d3, { recursive: true, force: true });
+  removeDir(d3);
 });
 
 test('migrations upgrade a database from the original starter project without losing data', async () => {
@@ -644,7 +861,9 @@ test('migrations upgrade a database from the original starter project without lo
     assert.equal(r.body.communities[0].name, 'Legacy Group');
     assert.equal(r.body.communities[0].image_url, '');
   } finally { await s.stop(); }
-  const cols = new Database(file).prepare('PRAGMA table_info(communities)').all().map(c => c.name);
+  const check = new Database(file);
+  const cols = check.prepare('PRAGMA table_info(communities)').all().map(c => c.name);
+  check.close(); // Windows cannot delete a file that is still open
   assert.ok(cols.includes('image_url') && cols.includes('status'));
-  fs.rmSync(d4, { recursive: true, force: true });
+  removeDir(d4);
 });

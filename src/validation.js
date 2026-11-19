@@ -134,6 +134,73 @@ function capacity(value) {
   return Number(s);
 }
 
+/** 'YYYY-MM-DDTHH:MM' (from <input type="datetime-local">). Returns the normalised string. */
+function localDateTime(value, field, label) {
+  const v = typeof value === 'string' ? value.trim().slice(0, 16) : '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d)$/.exec(v);
+  if (!m) throw new ValidationError(`${label} must be a date and time.`, field);
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+  if (d.getMonth() !== Number(m[2]) - 1) throw new ValidationError(`${label} is not a real date.`, field);
+  return v;
+}
+
+/**
+ * Early-bird pricing. Returns { early_price, early_until, early_limit } (all null when not used).
+ * Rules: cheaper than the standard price, ends in the future and no later than the event start.
+ */
+function earlyBird(b, standardPence, eventDate, eventTime) {
+  const empty = x => x === undefined || x === null || x === '';
+  if (empty(b.early_price) && empty(b.early_until) && empty(b.early_limit)) return { early_price: null, early_until: null, early_limit: null };
+  if (empty(b.early_price)) throw new ValidationError('Enter the early-bird price, or clear the early-bird fields.', 'early_price');
+  if (!standardPence) throw new ValidationError('Set a standard ticket price before adding an early-bird price.', 'price');
+  const early = pricePence(b.early_price);
+  if (early >= standardPence) throw new ValidationError('The early-bird price must be lower than the standard price.', 'early_price');
+  if (empty(b.early_until)) throw new ValidationError('Choose when the early-bird offer ends.', 'early_until');
+  const until = localDateTime(b.early_until, 'early_until', 'Early-bird end');
+  const nowLocal = `${todayIso()}T${nowTime()}`;
+  if (until <= nowLocal) throw new ValidationError('The early-bird end must be in the future.', 'early_until');
+  if (until > `${eventDate}T${eventTime}`) throw new ValidationError('The early-bird offer must end before the event starts.', 'early_until');
+  let limit = null;
+  if (!empty(b.early_limit)) {
+    const s = String(b.early_limit).trim();
+    if (!/^\d{1,5}$/.test(s) || Number(s) < 1) throw new ValidationError('Early-bird ticket limit must be a whole number of 1 or more, or empty.', 'early_limit');
+    limit = Number(s);
+  }
+  return { early_price: early, early_until: until, early_limit: limit };
+}
+
+function promoCode(value) {
+  const v = String(value ?? '').trim().toUpperCase();
+  if (!/^[A-Z0-9]{3,20}$/.test(v)) throw new ValidationError('Promo codes are 3–20 letters or numbers, e.g. STUDENT20.', 'code');
+  return v;
+}
+
+function percentOff(value) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 5 || n > 100) throw new ValidationError('Discount must be a whole number from 5 to 100 (%).', 'percent_off');
+  return n;
+}
+
+/** Card checks for the built-in demo checkout (format + Luhn). No card data is stored. */
+function testCard(b) {
+  const number = String(b.card_number || '').replace(/[\s-]/g, '');
+  if (!/^\d{13,19}$/.test(number)) throw new ValidationError('Enter a valid card number.', 'card_number');
+  let sum = 0;
+  for (let i = 0; i < number.length; i++) {
+    let d = Number(number[number.length - 1 - i]);
+    if (i % 2) { d *= 2; if (d > 9) d -= 9; }
+    sum += d;
+  }
+  if (sum % 10) throw new ValidationError('That card number is not valid.', 'card_number');
+  const m = /^(0[1-9]|1[0-2])\s*\/\s*(\d{2})$/.exec(String(b.expiry || '').trim());
+  if (!m) throw new ValidationError('Enter the expiry date as MM/YY.', 'expiry');
+  const exp = new Date(2000 + Number(m[2]), Number(m[1]), 1); // first day of the month after expiry
+  if (exp <= new Date()) throw new ValidationError('That card has expired.', 'expiry');
+  if (!/^\d{3,4}$/.test(String(b.cvc || '').trim())) throw new ValidationError('Enter the 3 or 4 digit security code.', 'cvc');
+  text(b.name, { field: 'name', label: 'Name on card', min: 2, max: 80, required: true });
+  return { last4: number.slice(-4), declined: number === '4000000000000002' };
+}
+
 function rating(value) {
   const n = Number(value);
   if (!Number.isInteger(n) || n < 1 || n > 5) throw new ValidationError('Choose a rating from 1 to 5 stars.', 'rating');
@@ -147,6 +214,6 @@ function normalisePostcode(value) {
 
 module.exports = {
   CATEGORIES, ROLES, UK_BOUNDS, ValidationError,
-  text, email, password, role, category, coordinates, imageUrl, eventDate, eventTime, id, pricePence, capacity, rating,
+  text, email, password, role, category, coordinates, imageUrl, eventDate, eventTime, id, pricePence, capacity, rating, localDateTime, earlyBird, promoCode, percentOff, testCard,
   isValidCoordinate, inUk, todayIso, nowTime, normalisePostcode, UK_POSTCODE_RE
 };

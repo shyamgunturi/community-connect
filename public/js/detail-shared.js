@@ -8,7 +8,7 @@
     const slot = $('detailAccount');
     const u = CC.user;
     if (u) {
-      slot.innerHTML = `<span class="account-label">Hi, ${esc(u.name.split(' ')[0])} <small class="role-badge">${esc(u.role)}</small></span><a class="outline-btn" href="index.html#dashboard">My dashboard</a><button class="outline-btn" type="button" id="detailLogout">Log out</button>`;
+      slot.innerHTML = `<span class="account-label">Hi, ${esc(u.name.split(' ')[0])} <small class="role-badge">${esc(u.role)}</small></span><a class="outline-btn" href="${u.role === 'admin' ? 'admin.html' : 'index.html#dashboard'}">${u.role === 'admin' ? 'Admin dashboard' : 'My dashboard'}</a><button class="outline-btn" type="button" id="detailLogout">Log out</button>`;
       $('detailLogout').onclick = () => { CC.clearSession(); toast('You have logged out.'); renderAccount(onChange); onChange?.(); };
     } else {
       slot.innerHTML = '<button class="outline-btn" type="button" id="detailLogin">Log in</button>';
@@ -36,6 +36,22 @@
       $('authToggle').textContent = reg ? 'I already have an account' : 'Create an account';
       if (!sec.contains(document.activeElement)) (reg ? $('authName') : $('authEmail')).focus({ preventScroll: true });
       sec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      let g = sec.querySelector('[data-google-block]');
+      if (!g) {
+        g = document.createElement('div');
+        g.className = 'google-block hidden'; g.setAttribute('data-google-block', '');
+        g.innerHTML = '<div class="or-divider">or</div><div class="google-slot"></div>';
+        $('detailAuthForm').appendChild(g);
+      }
+      CC.mountGoogle(g.querySelector('.google-slot'), {
+        getRole: () => 'participant',
+        onAuthed: async data => {
+          hide();
+          toast(data.created ? `Welcome, ${data.user.name.split(' ')[0]}! Your account is ready.` : `Welcome back, ${data.user.name.split(' ')[0]}.`, 'success');
+          await onAuthed(data.user);
+        },
+        onError: msg => setMessage($('authMessage'), msg, 'error')
+      });
     }
     function hide() { sec.classList.add('hidden'); }
     $('authToggle').onclick = () => show(mode === 'login' ? 'register' : 'login');

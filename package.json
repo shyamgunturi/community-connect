@@ -1,13 +1,13 @@
 {
   "name": "community-connect",
-  "version": "2.0.0",
+  "version": "6.0.0",
   "private": true,
   "description": "Community Connect — location-based community discovery platform (Express + SQLite)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test --test-concurrency=1 test/api.test.js",
+    "test": "node --test --test-concurrency=1 test/api.test.js test/v5.test.js test/v6.test.js",
     "check": "node scripts/check.js"
   },
   "engines": {

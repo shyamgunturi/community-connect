@@ -376,3 +376,20 @@ a.outline-btn,a.event-register,a.primary-btn{text-decoration:none;display:inline
 .data-table .text-btn{font-size:11px;padding:2px 0;white-space:nowrap}
 .organizer-content,.organizer-panel,.viz-card{min-width:0}
 @media(max-width:600px){.analytics-heading{flex-direction:column;align-items:flex-start}}
+
+/* ===== Ticket promotion (v4) ===== */
+.chip-early{background:#fff1e4;color:#9a4a17}
+.chip-early s{font-weight:500;opacity:.7;margin-left:3px}
+.chip-timer{background:#173a34;color:#fff;font-variant-numeric:tabular-nums}
+.pricing-heading h4{font:800 14px Manrope,sans-serif;margin:8px 0 2px;color:#173a34}
+.pricing-heading p{font-size:11px;color:#71828a;margin:0}
+.early-field input{border-color:#f0d0b4}
+.promo-create{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:8px}
+.promo-create label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700;color:#344b57}
+.promo-create input{width:150px}
+/* Equal-length tracks so horizontal bars are comparable */
+.viz-hrow{grid-template-columns:minmax(90px,34%) 1fr 128px}
+.viz-hvalue{white-space:normal}
+.promo-create input{border:1px solid #dbe5e0;border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;background:#fff}
+.promo-create input:focus{outline:none;border-color:#1f8a70;box-shadow:0 0 0 3px #1f8a7022}
+@media(max-width:480px){.viz-hrow{grid-template-columns:1fr auto}}

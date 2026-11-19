@@ -40,8 +40,9 @@
     return data;
   }
 
-  function setSession(newToken, user) { token = newToken; currentUser = user; store.set(TOKEN_KEY, newToken); }
-  function clearSession() { token = null; currentUser = null; store.remove(TOKEN_KEY); }
+  const sessionChanged = () => setTimeout(() => window.dispatchEvent(new CustomEvent('cc:session')), 0);
+  function setSession(newToken, user) { token = newToken; currentUser = user; store.set(TOKEN_KEY, newToken); sessionChanged(); }
+  function clearSession() { token = null; currentUser = null; store.remove(TOKEN_KEY); sessionChanged(); }
   async function loadUser() {
     if (!token) { currentUser = null; return null; }
     try { currentUser = (await api('/auth/me')).user; }
@@ -228,9 +229,80 @@
 
   function params() { return new URLSearchParams(location.search); }
 
+  const gbp = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
+  const money = pence => gbp.format((pence || 0) / 100).replace(/\.00$/, '');
+  const ticketLabel = t => ({ early_bird: 'Early bird', standard: 'Standard', free: 'Free', flash_sale: 'Flash sale' }[t] || 'Ticket');
+
+  /**
+   * Live countdowns. Any element with data-countdown="YYYY-MM-DDTHH:MM" (UK local time) ticks every second.
+   * Optional: data-countdown-style="short" (2d 5h) and data-countdown-ended="text shown at zero".
+   * When one reaches zero a "cc:countdown-ended" event is fired so the page can refresh prices.
+   */
+  function formatLeft(ms, style) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    const p = n => String(n).padStart(2, '0');
+    if (style === 'short') return d ? `${d}d ${h}h` : h ? `${h}h ${p(m)}m` : `${m}m ${p(sec)}s`;
+    if (style === 'blocks') return [[d, 'days'], [h, 'hrs'], [m, 'mins'], [sec, 'secs']].map(([n, l]) => `<span class="cd-unit"><b>${p(n)}</b><small>${l}</small></span>`).join('');
+    return `${d ? d + 'd ' : ''}${p(h)}:${p(m)}:${p(sec)}`;
+  }
+  function tickCountdowns() {
+    const nowMs = Date.now();
+    document.querySelectorAll('[data-countdown]').forEach(el => {
+      const target = new Date(el.dataset.countdown.length === 16 ? el.dataset.countdown + ':00' : el.dataset.countdown).getTime();
+      const left = target - nowMs;
+      if (Number.isNaN(target)) return;
+      if (left <= 0) {
+        if (!el.dataset.done) {
+          el.dataset.done = '1';
+          el.textContent = el.dataset.countdownEnded || 'now';
+          window.dispatchEvent(new CustomEvent('cc:countdown-ended', { detail: { el } }));
+        }
+        return;
+      }
+      const style = el.dataset.countdownStyle;
+      if (style === 'blocks') el.innerHTML = formatLeft(left, style); else el.textContent = formatLeft(left, style);
+    });
+  }
+  setInterval(tickCountdowns, 1000);
+  const countdownNow = () => tickCountdowns();
+
+  // ---------- show / hide password (eye button on every password field, including ones added later) ----------
+  const EYE = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_OFF = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+  function setPwVisible(inp, btn, show) {
+    inp.type = show ? 'text' : 'password';
+    btn.innerHTML = show ? EYE_OFF : EYE;
+    btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    btn.setAttribute('aria-pressed', String(show));
+    btn.title = show ? 'Hide password' : 'Show password';
+  }
+  function enhancePasswords(root) {
+    (root || document).querySelectorAll('input[type=password]:not([data-pw])').forEach(inp => {
+      inp.dataset.pw = '1';
+      const wrap = document.createElement('span');
+      wrap.className = 'pw-wrap';
+      inp.parentNode.insertBefore(wrap, inp);
+      wrap.appendChild(inp);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pw-toggle';
+      setPwVisible(inp, btn, false);
+      btn.addEventListener('click', e => { e.preventDefault(); setPwVisible(inp, btn, inp.type === 'password'); inp.focus({ preventScroll: true }); });
+      wrap.appendChild(btn);
+    });
+  }
+  function hideAllPasswords(root) {
+    (root || document).querySelectorAll('input[data-pw]').forEach(inp => { const b = inp.parentNode.querySelector('.pw-toggle'); if (b) setPwVisible(inp, b, false); });
+  }
+  document.addEventListener('reset', e => hideAllPasswords(e.target), true);
+  document.addEventListener('submit', e => setTimeout(() => hideAllPasswords(e.target), 0), true);
+  const startPw = () => { enhancePasswords(); new MutationObserver(() => enhancePasswords()).observe(document.body, { childList: true, subtree: true }); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startPw); else startPw();
+
   window.CC = {
     api, ApiError, esc, formatDate, dateParts, plural, icon, photo, toast, setMessage, debounce,
-    locationAutocomplete, uploadImage, params, FALLBACK_IMAGE,
+    locationAutocomplete, uploadImage, params, FALLBACK_IMAGE, money, ticketLabel, countdownNow,
     get token() { return token; }, get user() { return currentUser; },
     setSession, clearSession, loadUser
   };

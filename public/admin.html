@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin dashboard | Community Connect</title><meta name="robots" content="noindex"><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="detail-pages.css"><link rel="stylesheet" href="v5.css"></head>
+<body><header class="site-header"><a class="brand" href="index.html"><span class="brand-mark">C</span><span>Community<span class="brand-light">Connect</span></span></a><nav class="top-nav" aria-label="Main navigation"><a href="index.html">Website</a><a href="index.html#events">Events</a></nav><div class="header-account" id="detailAccount"></div></header>
+<main class="admin-shell">
+  <section id="adminLogin" class="detail-card admin-login hidden"><div class="detail-body">
+    <p class="eyebrow">PLATFORM ADMIN</p><h1>Admin log in</h1>
+    <p class="detail-description">The admin sees the whole platform: members, organizers, events, ticket sales, the platform fee we earn and the payouts we owe organizers.</p>
+    <form id="adminLoginForm" class="checkin-login" novalidate>
+      <label>Email <input id="adEmail" type="email" autocomplete="username" required maxlength="254"></label>
+      <label>Password <input id="adPassword" type="password" autocomplete="current-password" required maxlength="128"></label>
+      <button class="primary-btn" type="submit" id="adLoginBtn">Log in</button>
+      <p class="form-message" id="adLoginMsg" role="alert"></p>
+    </form>
+  </div></section>
+
+  <section id="adminApp" class="hidden">
+    <div class="admin-head">
+      <div><p class="eyebrow">PLATFORM ADMIN</p><h1>How Community Connect is doing</h1><p class="muted" id="adminSub">Loading…</p></div>
+      <label class="analytics-range">Period <select id="adminMonths"><option value="6">Last 6 months</option><option value="12">Last 12 months</option></select></label>
+    </div>
+    <div id="adminContent" class="viz-root"><p class="muted">Loading the platform figures…</p></div>
+  </section>
+</main>
+<footer><a class="brand footer-brand" href="index.html"><span class="brand-mark">C</span><span>Community<span class="brand-light">Connect</span></span></a><p>A more connected world starts with finding your people.</p><small>Discover openly. Connect meaningfully.</small></footer>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="js/common.js"></script><script src="js/qr.js"></script><script src="js/extras.js"></script><script src="js/charts.js"></script><script src="js/detail-shared.js"></script><script src="js/admin-page.js"></script></body></html>

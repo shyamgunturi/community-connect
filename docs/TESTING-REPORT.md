@@ -1,14 +1,15 @@
 # Community Connect — Testing report
 
-Date: 12 November 2026 · Version 3.0.0 (analytics update) — first issued 6 November 2026
+Date: 19 November 2026 · Version 6.0.0 (admin, commission & payouts) — first issued 6 November 2026
 
 ## Summary
 
 | Suite | Result |
 |---|---|
 | Syntax and file check (`npm run check`) | ✅ all JS files parse |
-| Automated API tests (`npm test`) | ✅ **41 / 41 passed** |
-| Browser end-to-end tests (`node test/e2e.browser.js`, Chromium) | ✅ **38 / 38 passed** |
+| Automated API tests (`npm test`) | ✅ **67 / 67 passed** (49 + 11 v5 + 7 v6 tests) |
+| Browser end-to-end tests (`node test/e2e.browser.js`, Chromium) | ✅ **53 / 53 passed** (incl. admin dashboard on tablet and mobile) |
+| QR codes decoded by an independent reader (OpenCV) | ✅ 6 / 6 texts (5–300 characters) decoded exactly |
 | Failed tests remaining | **0** |
 
 ### ⚠️ Test environment — please read
@@ -26,13 +27,62 @@ The stand-ins are **not** part of the project. Every line of project code, every
 
 ```bash
 npm install
-npm test                    # expect: # pass 31, # fail 0
+npm test                    # expect: # pass 67, # fail 0
 npm start                   # then open http://localhost:3000 and http://localhost:3000/api/health
 ```
 
 Then check live location search by hand: type `Middles`, `TS1 3BX` and `Leeds` in the discovery search box.
 
 ---
+
+## Version 6 — admin dashboard, commission & payouts, cancellation, Google sign-in
+
+| Feature | API tests (`test/v6.test.js`) | Browser test |
+|---|---|---|
+| Admin login & access | ✅ correct/incorrect password, negative id, admin area 403 for organizers/participants and 401 logged out, admin cannot act as organizer/participant, admin email cannot be registered | ✅ login from the homepage redirects to the admin dashboard; tablet & mobile without overflow |
+| Platform fee | ✅ 10% of £25 = £2.50 fee, £22.50 organizer share, rate stored per ticket; organizer earnings totals | ✅ organizer *Your earnings & payouts* |
+| Payouts | ✅ pending before the event, ready after, admin marks paid (reference kept, 403 for others, 409 twice, 404 unknown), organizer notified, paid payouts frozen | ✅ *Mark as paid* moves the row to Paid |
+| Cancellation & refunds | ✅ owner only, refunds paid tickets, refunded tickets lose their QR code, notifications, hidden from listings, booking returns 410, no payout, past events refused | ✅ cancel from *My events*; participant sees the cancelled banner and refund |
+| Continue with Google | ✅ new participant, new organizer, existing account linked (keeps its role), wrong audience / unverified email / forged token refused, malformed 400, disabled cleanly without a client id | (needs a real Google client id) |
+| Show / hide password | — | ✅ eye button toggles and labels change |
+| Extra demo content | ✅ new events, 3 organizers with sales, paid/ready/pending payouts, monthly figures | ✅ used throughout |
+
+## Version 5 — QR tickets, door check-in, promotion, waitlist, notifications, map
+
+| Feature | API tests (`test/v5.test.js`) | Browser test |
+|---|---|---|
+| QR e-ticket (secret 24-hex code, unique, hidden from others) | ✅ code + referral code issued on payment; not visible to other users | ✅ QR on payment page, event page and dashboard modal |
+| QR encoder | ✅ matrix size and finder patterns | ✅ OpenCV decoded every generated code exactly |
+| Door check-in | ✅ owner only (other organizer / participant 403, logged out 401), invalid code 404, unpaid hold 404, not open >36 h before (400), second scan → `already` | ✅ scan link → green “Welcome, Priya · 1 of 10”, re-scan → amber, nonsense → red |
+| Bring a friend | ✅ 10% off, no self-referral, bad code ignored, referrer notified, analytics totals | ✅ invite link shown after purchase |
+| Flash sale | ✅ validation, owner only, free events refused, cheapest of flash / early bird wins, members notified, ends on demand | ✅ started from *My events*; price switches to flash sale |
+| Featured & trending | ✅ toggle validated + owner only, appears/disappears on homepage lists | ✅ Trending / Featured / Deals tabs with badges |
+| Waitlist | ✅ positions, full-event refusal, freed place offered and held (others refused), booking clears the entry, capacity increase offers next | (API) |
+| Notifications | ✅ ticket, referral, waitlist offer, flash sale, new event, check-in, one-off 24 h reminder, read / read-all, privacy | ✅ bell badge, list, mark all read |
+| Map view | — | ✅ pins, popup, zoom (map tiles need internet) |
+| Demo data | ✅ next-day event with 9 tickets, featured event, live flash sale | ✅ used throughout |
+
+## Version 4 — payments, early bird, promo codes, countdown
+
+| Feature | API tests | Browser test |
+|---|---|---|
+| Paid events can't be booked without paying (402); checkout holds a place; others can't take it (409) | ✅ | ✅ |
+| Demo card checks: invalid number (Luhn), expired, bad CVC, missing name → 400; declined test card → 402; good card → paid | ✅ | ✅ declined then paid, e-ticket shown |
+| Full card number never stored | ✅ | — |
+| Paid tickets can't be cancelled online; unpaid holds can be released | ✅ | — |
+| Unpaid holds expire after 30 minutes and free the place | ✅ | — |
+| Early-bird validation (cheaper than standard, has an end, ends in future and before the event, limit ≥ 1, needs a standard price) | ✅ | ✅ form error then success |
+| Early bird switches to standard when its ticket limit is reached | ✅ | — |
+| Promo codes: only owner can manage; format and % checked; duplicate 409; max uses enforced; 100% code books without payment | ✅ | ✅ wrong code rejected, STUDENT20 → £4.80 |
+| Run again copies early-bird timing (same gap) and promo codes | ✅ | — |
+| Analytics: sales by ticket type and promo usage (paid only) | ✅ | ✅ |
+| **Stripe mode** against a fake Stripe server: correct Checkout Session (GBP, amount in pence, return URLs, customer email), demo payments disabled, unpaid session → 402, paid session confirmed | ✅ | — |
+| Countdown timers tick on event page and cards | — | ✅ |
+| Leaving a community keeps paid tickets | ✅ | — |
+
+**Bugs found while testing version 4 and fixed:** horizontal bar charts had different track lengths (bars weren't comparable); the card form's security-code box overflowed; charts tried to draw at near-zero width (negative SVG sizes) when hidden; a re-opened checkout with a single-use promo code counted the buyer's own hold.
+
+**Not tested live:** real Stripe (no internet here). The Stripe code was tested against a fake Stripe server that checks the exact request; try it yourself with a free Stripe *test* key.
 
 ## Version 3 — analytics, run again, prices and attendance
 

@@ -36,7 +36,8 @@
     if (user) {
       slot.innerHTML = `<span class="account-label">Hi, ${esc(user.name.split(' ')[0])} <small class="role-badge">${esc(user.role)}</small></span><button class="outline-btn" id="dashboardBtn" type="button">My dashboard</button><button class="outline-btn" id="logoutBtn" type="button">Log out</button>`;
       $('logoutBtn').onclick = logout;
-      $('dashboardBtn').onclick = () => openView(user.role, { scrollTo: user.role === 'participant' ? 'dashboardSection' : null });
+      $('dashboardBtn').onclick = () => user.role === 'admin' ? (location.href = 'admin.html') : openView(user.role, { scrollTo: user.role === 'participant' ? 'dashboardSection' : null });
+      if (user.role === 'admin') $('dashboardBtn').textContent = 'Admin dashboard';
       $('getStartedBtn').classList.add('hidden');
     } else {
       slot.innerHTML = '<button class="outline-btn" id="loginBtn" type="button">Log in</button>';
@@ -64,6 +65,24 @@
       : 'New here? <button type="button" id="switchAuth">Create an account</button>';
     $('switchAuth').onclick = () => openAuth(isRegister ? 'login' : 'register', { role, message, onSuccess });
     (isRegister ? $('authName') : $('authEmail')).focus();
+    CC.mountGoogle($('googleSlot'), {
+      getRole: () => ($('authForm').dataset.mode === 'register' ? document.querySelector('input[name=authRole]:checked').value : 'participant'),
+      onAuthed: data => afterAuth(data, data.created ? 'register' : 'login'),
+      onError: msg => setMessage($('authMessage'), msg, 'error')
+    });
+  }
+
+  /** Shared by email/password and Google sign-in. */
+  async function afterAuth(data, mode) {
+    const next = state.pendingAction;
+    $('authModal').classList.add('hidden');
+    state.pendingAction = null;
+    $('authForm').reset();
+    renderHeader();
+    toast(mode === 'register' ? `Welcome to Community Connect, ${data.user.name.split(' ')[0]}!` : `Welcome back, ${data.user.name.split(' ')[0]}.`, 'success');
+    if (data.user.role === 'admin') { location.href = 'admin.html'; return; }
+    if (next) await next(data.user);
+    else await openView(data.user.role);
   }
   function closeAuth() { $('authModal').classList.add('hidden'); state.pendingAction = null; }
 
@@ -83,14 +102,7 @@
     try {
       const data = await api('/auth/' + mode, { method: 'POST', body });
       CC.setSession(data.token, data.user);
-      const next = state.pendingAction;
-      $('authModal').classList.add('hidden');
-      state.pendingAction = null;
-      $('authForm').reset();
-      renderHeader();
-      toast(mode === 'register' ? `Welcome to Community Connect, ${data.user.name.split(' ')[0]}!` : `Welcome back, ${data.user.name.split(' ')[0]}.`, 'success');
-      if (next) await next(data.user);
-      else await openView(data.user.role);
+      await afterAuth(data, mode);
     } catch (err) {
       setMessage($('authMessage'), err.message, 'error');
     } finally { btn.disabled = false; }
@@ -125,6 +137,7 @@
 
   async function openView(role, { scrollTo = null } = {}) {
     const user = CC.user;
+    if (user && user.role === 'admin') { location.href = 'admin.html'; return; }
     if (user && user.role !== role) {
       toast(`You're signed in as ${user.role === 'organizer' ? 'an organizer' : 'a participant'}. Log out to use the ${role} space.`);
       role = user.role;
@@ -146,23 +159,48 @@
     const { day, month } = dateParts(e.event_date);
     const img = e.image_url || e.community_image_url;
     return `<article class="event-card">
-      <a class="event-card-media" href="event.html?id=${e.id}" aria-label="${esc(e.name)}">${photo(img, e.name, 'event-photo')}<span class="date-badge"><b>${esc(day)}</b><small>${esc(month)}</small></span>${e.registered ? '<span class="status-chip">Registered</span>' : ''}</a>
+      <a class="event-card-media" href="event.html?id=${e.id}" aria-label="${esc(e.name)}">${photo(img, e.name, 'event-photo')}<span class="date-badge"><b>${esc(day)}</b><small>${esc(month)}</small></span>${e.registered ? '<span class="status-chip">Registered</span>' : ''}${CC.badges(e, 2)}</a>
       <div class="event-card-body">
         <p class="event-community">${icon(e.community_category)} ${esc(e.community_name)}</p>
         <h4><a href="event.html?id=${e.id}">${esc(e.name)}</a></h4>
         <p class="event-when">📅 ${esc(formatDate(e.event_date))} · ◷ ${esc(e.event_time)}</p>
         <p class="event-where">⌖ ${esc(e.venue)}${e.community_town ? ', ' + esc(e.community_town) : ''}</p>
-        <p class="event-chips"><span class="chip">${priceLabel(e.price_pence)}</span>${e.is_full ? '<span class="chip chip-full">Full</span>' : e.spots_left != null && e.spots_left <= 5 ? `<span class="chip chip-low">${e.spots_left} ${e.spots_left === 1 ? 'place' : 'places'} left</span>` : e.capacity ? `<span class="chip">${e.spots_left} places left</span>` : ''}</p>
+        <p class="event-chips">${e.flash_active ? `<span class="chip chip-flash">⚡ ${money(e.current_price_pence)} <s>${money(e.price_pence)}</s></span><span class="chip chip-timer">⏳ <span data-countdown="${esc(e.flash_until)}" data-countdown-style="short" data-countdown-ended="ended"></span></span>` : e.early_active ? `<span class="chip chip-early">Early bird ${money(e.early_price_pence)} <s>${money(e.price_pence)}</s></span><span class="chip chip-timer">⏳ <span data-countdown="${esc(e.early_until)}" data-countdown-style="short" data-countdown-ended="ended"></span></span>` : `<span class="chip">${priceLabel(e.price_pence)}</span>`}${e.is_full ? '<span class="chip chip-full">Full</span>' : e.spots_left != null && e.spots_left <= 5 ? `<span class="chip chip-low">${e.spots_left} ${e.spots_left === 1 ? 'place' : 'places'} left</span>` : e.capacity ? `<span class="chip">${e.spots_left} places left</span>` : ''}</p>
         <p class="event-desc">${esc(e.description || 'More details will be shared by the organizer.')}</p>
         <a class="join-btn" href="event.html?id=${e.id}">${e.registered ? 'View my registration' : 'View event'}</a>
       </div></article>`;
   }
 
+  // Featured / trending / deals strip on the homepage
+  let promoData = null, promoTab = 'trending';
+  function renderPromo() {
+    const grid = $('promoGrid');
+    if (!grid || !promoData) return;
+    const list = promoData[promoTab] || [];
+    document.querySelectorAll('[data-promo-tab]').forEach(b => { const on = b.dataset.promoTab === promoTab; b.classList.toggle('active', on); b.setAttribute('aria-selected', String(on)); });
+    grid.innerHTML = list.length ? list.slice(0, 3).map(eventCard).join('') : `<div class="empty-inline"><strong>${promoTab === 'deals' ? 'No live deals right now' : 'Nothing here yet'}</strong><p>Check back soon — organizers add new events and offers all the time.</p></div>`;
+    CC.countdownNow();
+  }
+  async function loadHomePromo() {
+    const sec = $('homePromo');
+    if (!sec) return;
+    try {
+      promoData = await api('/events/trending');
+      if (!promoData.trending.length && promoData.featured.length) promoTab = 'featured';
+      sec.classList.toggle('hidden', !promoData.trending.length && !promoData.featured.length && !promoData.deals.length);
+      $('dealCount').textContent = promoData.deals.length ? String(promoData.deals.length) : '';
+      renderPromo();
+    } catch { sec.classList.add('hidden'); }
+  }
+  document.querySelectorAll('[data-promo-tab]').forEach(b => { b.onclick = () => { promoTab = b.dataset.promoTab; renderPromo(); }; });
+
   async function loadHomeEvents() {
+    loadHomePromo();
     const grid = $('homeEventGrid');
     try {
       const { events } = await api('/events/public?limit=3');
       grid.innerHTML = events.length ? events.map(eventCard).join('') : '<div class="empty-inline"><strong>No public events yet</strong><p>Events published by organizers will appear here.</p></div>';
+      CC.countdownNow();
     } catch (e) {
       grid.innerHTML = `<div class="empty-inline error-inline"><strong>Events could not be loaded</strong><p>${esc(e.message)}</p></div>`;
     }
@@ -218,8 +256,83 @@
         <a class="join-btn" href="community.html?id=${c.id}">Discover its story</a></div></article>`;
   }
 
+  // ---- map view (OpenStreetMap tiles drawn with plain images; no external script needed) ----
+  let viewMode = 'list', mapView = null;
+  const TILE = 256;
+  const lon2x = (lon, z) => (lon + 180) / 360 * TILE * 2 ** z;
+  const lat2y = (lat, z) => { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * TILE * 2 ** z; };
+  function fitMap(points, w, h) {
+    if (!points.length) return { z: 6, cx: lon2x(-1.8, 6), cy: lat2y(54.0, 6) };
+    for (let z = 15; z >= 4; z--) {
+      const xs = points.map(p => lon2x(p.lon, z)), ys = points.map(p => lat2y(p.lat, z));
+      const spanX = Math.max(...xs) - Math.min(...xs), spanY = Math.max(...ys) - Math.min(...ys);
+      if (spanX <= w - 90 && spanY <= h - 110) return { z, cx: (Math.max(...xs) + Math.min(...xs)) / 2, cy: (Math.max(...ys) + Math.min(...ys)) / 2 };
+    }
+    return { z: 4, cx: lon2x(-2, 4), cy: lat2y(54, 4) };
+  }
+  function drawMap() {
+    const box = $('communityMap');
+    if (!box || viewMode !== 'map') return;
+    const list = state.communities.filter(c => Number.isFinite(c.latitude) && Number.isFinite(c.longitude));
+    const w = box.clientWidth || 800, h = box.clientHeight || 460;
+    if (!mapView) {
+      const pts = list.map(c => ({ lat: c.latitude, lon: c.longitude }));
+      if (state.origin) pts.push({ lat: state.origin.lat, lon: state.origin.lon });
+      mapView = fitMap(pts, w, h);
+    }
+    const { z, cx, cy } = mapView;
+    const left = cx - w / 2, top = cy - h / 2;
+    const n = 2 ** z;
+    let tiles = '';
+    for (let tx = Math.floor(left / TILE); tx <= Math.floor((left + w) / TILE); tx++) {
+      for (let ty = Math.floor(top / TILE); ty <= Math.floor((top + h) / TILE); ty++) {
+        if (ty < 0 || ty >= n) continue;
+        const wx = ((tx % n) + n) % n;
+        tiles += `<img class="map-tile" alt="" draggable="false" src="https://tile.openstreetmap.org/${z}/${wx}/${ty}.png" style="left:${Math.round(tx * TILE - left)}px;top:${Math.round(ty * TILE - top)}px">`;
+      }
+    }
+    const pins = list.map((c, i) => `<button type="button" class="map-pin${c.joined ? ' is-member' : ''}" data-pin="${i}" style="left:${Math.round(lon2x(c.longitude, z) - left)}px;top:${Math.round(lat2y(c.latitude, z) - top)}px" aria-label="${esc(c.name)}, ${esc(c.town)}"><span><i>${icon(c.category)}</i></span></button>`).join('');
+    const me = state.origin ? `<span class="map-me" style="left:${Math.round(lon2x(state.origin.lon, z) - left)}px;top:${Math.round(lat2y(state.origin.lat, z) - top)}px" title="Your search location"></span>` : '';
+    box.querySelector('.map-layer').innerHTML = tiles + me + pins;
+    box.dataset.count = String(list.length);
+  }
+  function mapPopup(i) {
+    const c = state.communities.filter(x => Number.isFinite(x.latitude) && Number.isFinite(x.longitude))[i];
+    const pop = $('mapPopup');
+    if (!c) { pop.classList.add('hidden'); return; }
+    pop.innerHTML = `<button type="button" class="map-pop-close" aria-label="Close">×</button>${photo(c.image_url, c.name, 'map-pop-photo')}<div><small>${icon(c.category)} ${esc(c.category)} · ${esc(c.town)}${c.distance_miles != null ? ` · ${c.distance_miles.toFixed(1)} mi` : ''}</small><strong>${esc(c.name)}</strong><span>${plural(c.member_count, 'member')} · ${plural(c.upcoming_event_count, 'upcoming event')}</span><a class="join-btn" href="community.html?id=${c.id}">Discover its story</a></div>`;
+    pop.classList.remove('hidden');
+  }
+  function setViewMode(mode) {
+    viewMode = mode;
+    document.querySelectorAll('[data-view-mode]').forEach(b => { const on = b.dataset.viewMode === mode; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
+    $('communityMap').classList.toggle('hidden', mode !== 'map');
+    renderCommunities();
+  }
+  (function initMap() {
+    const box = $('communityMap');
+    if (!box) return;
+    document.querySelectorAll('[data-view-mode]').forEach(b => { b.onclick = () => setViewMode(b.dataset.viewMode); });
+    const zoom = d => { if (!mapView) return; const nz = Math.min(17, Math.max(3, mapView.z + d)); const f = 2 ** (nz - mapView.z); mapView = { z: nz, cx: mapView.cx * f, cy: mapView.cy * f }; drawMap(); };
+    box.querySelector('[data-zoom-in]').onclick = () => zoom(1);
+    box.querySelector('[data-zoom-out]').onclick = () => zoom(-1);
+    box.querySelector('[data-zoom-fit]').onclick = () => { mapView = null; drawMap(); };
+    let drag = null;
+    const layer = box.querySelector('.map-layer');
+    layer.addEventListener('pointerdown', e => { if (!mapView || e.target.closest('.map-pin')) return; drag = { x: e.clientX, y: e.clientY, cx: mapView.cx, cy: mapView.cy, moved: false }; layer.setPointerCapture(e.pointerId); });
+    layer.addEventListener('pointermove', e => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; mapView = { ...mapView, cx: drag.cx - dx, cy: drag.cy - dy }; drawMap(); });
+    layer.addEventListener('pointerup', () => { drag = null; });
+    layer.addEventListener('wheel', e => { e.preventDefault(); zoom(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+    layer.addEventListener('click', e => { const pin = e.target.closest('[data-pin]'); if (pin) mapPopup(Number(pin.dataset.pin)); });
+    $('mapPopup').addEventListener('click', e => { if (e.target.closest('.map-pop-close')) $('mapPopup').classList.add('hidden'); });
+    window.addEventListener('resize', CC.debounce(drawMap, 200));
+    box.addEventListener('error', e => { if (e.target.classList && e.target.classList.contains('map-tile')) e.target.classList.add('tile-missing'); }, true);
+  })();
+
   function renderCommunities() {
     const list = state.communities;
+    mapView = null;
+    if ($('mapPopup')) $('mapPopup').classList.add('hidden');
     const cat = state.category === 'all' ? 'all categories' : state.category;
     $('resultsSummary').textContent = state.origin
       ? `Within ${plural(state.radius, 'mile')} of ${state.origin.label} · ${cat} · nearest first`
@@ -227,7 +340,9 @@
     $('communityCount').textContent = `${list.length} to explore`;
     $('communityGrid').innerHTML = list.map(communityCard).join('');
     const empty = !list.length;
-    $('communityGrid').classList.toggle('hidden', empty);
+    $('communityGrid').classList.toggle('hidden', empty || viewMode === 'map');
+    $('communityMap')?.classList.toggle('hidden', empty || viewMode !== 'map');
+    if (viewMode === 'map' && !empty) requestAnimationFrame(drawMap);
     $('emptyState').classList.toggle('hidden', !empty);
     $('retryCommunities').classList.add('hidden');
     if (empty) {
@@ -275,6 +390,7 @@
       state.events = events;
       $('eventCount').textContent = events.length ? `${events.length} upcoming` : '';
       box.innerHTML = events.length ? events.map(eventCard).join('') : '<div class="empty-inline"><strong>No upcoming events yet</strong><p>When organizers publish events they will appear here for everyone to see.</p></div>';
+      CC.countdownNow();
     } catch (e) {
       box.innerHTML = `<div class="empty-inline error-inline"><strong>Events could not be loaded</strong><p>${esc(e.message)}</p></div>`;
     }
@@ -296,10 +412,11 @@
           <div class="item-main">${photo(c.image_url, c.name, 'thumb-photo')}<div><strong>${esc(c.name)}</strong><small>${esc(c.category)} · ${esc(c.town)} · ${plural(c.upcoming_event_count, 'upcoming event')}</small></div></div>
           <div class="item-actions"><a class="event-register" href="community.html?id=${c.id}">View</a><button class="text-btn danger-link" type="button" data-leave="${c.id}" data-name="${esc(c.name)}">Leave</button></div></div>`).join('')
         : '<p class="muted">You haven\'t joined a community yet. Open a community story and choose “Join this community”.</p>';
+      state.myEvents = events;
       $('registeredEvents').innerHTML = events.length ? events.map(e => `<div class="event-item${e.is_past ? ' is-past' : ''}">
           ${photo(e.image_url || e.community_image_url, e.name, 'event-thumb')}
-          <div class="event-copy"><strong>${esc(e.name)}</strong><small>${esc(e.community_name)} · ${esc(formatDate(e.event_date))} · ${esc(e.event_time)} · ${esc(e.venue)}</small>${!e.is_past ? `<small class="ok-label">✓ Registered${e.price_pence ? ' · ' + money(e.price_pence) + ' on the day' : ''}</small>` : e.attended ? `<small class="ok-label">✓ Attended${e.my_rating ? ' · you rated it ' + '★'.repeat(e.my_rating) : ''}</small>` : '<small class="past-label">This event has finished</small>'}</div>
-          <div class="item-actions">${e.is_past && e.attended && !e.my_rating ? `<a class="event-register rate-link" href="event.html?id=${e.id}#feedback">Rate it</a>` : ''}<a class="event-register" href="event.html?id=${e.id}">View</a>${e.has_started ? '' : `<button class="text-btn danger-link" type="button" data-cancel="${e.id}">Cancel</button>`}</div></div>`).join('')
+          <div class="event-copy"><strong>${esc(e.name)}</strong><small>${esc(e.community_name)} · ${esc(formatDate(e.event_date))} · ${esc(e.event_time)} · ${esc(e.venue)}</small>${!e.is_past ? `${e.is_cancelled ? `<small class="past-label">✕ Cancelled by the organizer${e.my_ticket && e.my_ticket.payment_status === 'refunded' ? ` · ${money(e.my_ticket.amount_pence)} refunded` : ''}</small>` : ''}<small class="ok-label${e.is_cancelled ? ' hidden' : ''}">✓ ${e.my_ticket && e.my_ticket.payment_status === 'paid' ? `${CC.ticketLabel(e.my_ticket.ticket_type)} ticket · ${money(e.my_ticket.amount_pence)} paid` : 'Registered'}</small>` : e.attended ? `<small class="ok-label">✓ Attended${e.my_rating ? ' · you rated it ' + '★'.repeat(e.my_rating) : ''}</small>` : '<small class="past-label">This event has finished</small>'}</div>
+          <div class="item-actions">${!e.is_past && e.my_ticket && e.my_ticket.ticket_code ? `<button class="event-register ticket-btn" type="button" data-ticket="${e.id}">🎟 ${e.my_ticket.checked_in ? 'Ticket ✓' : 'QR ticket'}</button>` : ''}${e.is_past && e.attended && !e.my_rating ? `<a class="event-register rate-link" href="event.html?id=${e.id}#feedback">Rate it</a>` : ''}<a class="event-register" href="event.html?id=${e.id}">View</a>${e.has_started || e.is_cancelled || (e.my_ticket && e.my_ticket.payment_status === 'paid') ? '' : `<button class="text-btn danger-link" type="button" data-cancel="${e.id}">Cancel</button>`}</div></div>`).join('')
         : '<p class="muted">You haven\'t registered for any events yet. Browse the upcoming events above.</p>';
       loadRecommendations();
     } catch (e) {
@@ -322,6 +439,8 @@
   $('dashboardSection').addEventListener('click', async e => {
     const leave = e.target.closest('[data-leave]');
     const cancel = e.target.closest('[data-cancel]');
+    const tbtn = e.target.closest('[data-ticket]');
+    if (tbtn) { const ev = (state.myEvents || []).find(x => x.id === Number(tbtn.dataset.ticket)); const t = ev && CC.ticketFromEvent(ev); if (t) CC.openTicket(t); return; }
     try {
       if (leave) {
         if (!confirm(`Leave ${leave.dataset.name}? Your registrations for its events will also be cancelled.`)) return;
@@ -389,12 +508,13 @@
     const sorted = [...events.filter(e => !e.has_started), ...events.filter(e => e.has_started).reverse()];
     $('organizerEventList').innerHTML = sorted.length ? sorted.map(e => {
       const booked = e.capacity ? `${e.registration_count}/${e.capacity} booked` : plural(e.registration_count, 'registration');
-      const status = e.has_started
+      const status = e.is_cancelled ? `<small class="past-label">✕ Cancelled${e.cancel_reason ? ` — ${esc(e.cancel_reason)}` : ''} · everyone refunded and notified</small>` : e.has_started
         ? `<small class="past-label">Finished · ${e.attended_count}/${e.registration_count} attended · ${money(e.revenue_pence)}${e.avg_rating ? ` · ★ ${e.avg_rating}` : ''}</small>`
-        : `<small class="ok-label">● Published · ${booked} · ${priceLabel(e.price_pence)}${e.is_full ? ' · FULL' : ''}</small>`;
+        : `<small class="ok-label">● Published · ${booked} · ${e.early_active ? `early bird ${money(e.early_price_pence)} → ${priceLabel(e.price_pence)} (${e.early_sold} sold)` : priceLabel(e.price_pence)} · ${money(e.revenue_pence)} taken${e.is_full ? ' · FULL' : ''}</small>`;
       return `<div class="manage-item${e.has_started ? ' is-past' : ''}">
-        <div class="item-main">${photo(e.image_url || e.community_image_url, e.name, 'thumb-photo')}<div><strong>${esc(e.name)}</strong><small>${esc(e.community_name)} · ${esc(formatDate(e.event_date))} · ${esc(e.event_time)} · ${esc(e.venue)}</small>${status}</div></div>
-        <div class="item-actions"><a class="event-register" href="event.html?id=${e.id}">View</a>${e.has_started ? `<button class="event-register" type="button" data-attendance="${e.id}">Attendance</button>` : `<button class="event-register" type="button" data-edit-event="${e.id}">Edit</button>`}<button class="event-register repeat-btn" type="button" data-repeat="${e.id}" title="Create the same event again, one week later">↻ Run again</button><button class="text-btn danger-link" type="button" data-delete-event="${e.id}">Delete</button></div></div>`;
+        <div class="item-main">${photo(e.image_url || e.community_image_url, e.name, 'thumb-photo')}<div><strong>${esc(e.name)}</strong><small>${esc(e.community_name)} · ${esc(formatDate(e.event_date))} · ${esc(e.event_time)} · ${esc(e.venue)}</small>${status}${CC.badges(e, 4)}${e.waitlist_count ? `<small class="muted">⏳ ${plural(e.waitlist_count, 'person', 'people')} on the waitlist</small>` : ''}</div></div>
+        <div class="item-actions"><a class="event-register" href="event.html?id=${e.id}">View</a>${e.has_started || e.checkin_open ? `<button class="event-register" type="button" data-attendance="${e.id}">Attendance${e.has_started ? '' : ` (${e.checked_in_count || 0} in)`}</button>` : ''}${!e.has_started ? `<button class="event-register" type="button" data-edit-event="${e.id}">Edit</button><a class="event-register" href="checkin.html?event=${e.id}">📷 Scan tickets</a><button class="event-register${e.featured ? ' is-on' : ''}" type="button" data-feature="${e.id}" data-on="${e.featured ? 1 : 0}" title="Show on the homepage">${e.featured ? '★ Featured' : '☆ Feature'}</button>${e.price_pence ? `<button class="event-register${e.flash_active ? ' is-on' : ''}" type="button" data-flash="${e.id}">${e.flash_active ? `⚡ ${e.flash_percent}% sale live` : '⚡ Flash sale'}</button>` : ''}` : ''}${e.price_pence && !e.has_started ? `<button class="event-register" type="button" data-promo="${e.id}">% Promo codes${e.promo_count ? ` (${e.promo_count})` : ''}</button>` : ''}<button class="event-register repeat-btn" type="button" data-repeat="${e.id}" title="Create the same event again, one week later">↻ Run again</button>${!e.has_started && !e.is_cancelled ? `<button class="text-btn danger-link" type="button" data-cancel-event="${e.id}" data-name="${esc(e.name)}" data-count="${e.registration_count}">Cancel event</button>` : ''}<button class="text-btn danger-link" type="button" data-delete-event="${e.id}">Delete</button></div>
+        ${e.price_pence && !e.has_started ? `<form class="flash-form hidden" data-flash-form="${e.id}"><strong>⚡ Flash sale</strong><label>Discount <select name="percent">${[10, 15, 20, 25, 30, 40, 50].map(p => `<option value="${p}"${p === (e.flash_percent || 20) ? ' selected' : ''}>${p}% off</option>`).join('')}</select></label><label>Runs for <select name="hours"><option value="2">2 hours</option><option value="6">6 hours</option><option value="24" selected>24 hours</option><option value="48">48 hours</option><option value="72">3 days</option></select></label><button class="primary-btn" type="submit">${e.flash_active ? 'Restart sale' : 'Start sale & notify members'}</button>${e.flash_active ? `<button class="outline-btn" type="button" data-end-flash="${e.id}">End sale</button><small>Ends in <span data-countdown="${esc(e.flash_until)}" data-countdown-style="short" data-countdown-ended="ended"></span></small>` : ''}</form>` : ''}</div>`;
     }).join('')
       : '<p class="muted">No events published yet.</p>';
     const sel = $('eventCommunity');
@@ -406,7 +526,7 @@
   }
 
   function showPanel(id) {
-    const menuId = id === 'attendancePanel' ? 'organizerEventsPanel' : id;
+    const menuId = id === 'attendancePanel' || id === 'promoPanel' ? 'organizerEventsPanel' : id;
     document.querySelectorAll('.side-link').forEach(x => x.classList.toggle('selected', x.dataset.panel === menuId));
     document.querySelectorAll('.organizer-panel').forEach(x => x.classList.toggle('hidden', x.id !== id));
     CCCharts.hideTip();
@@ -424,6 +544,36 @@
     const repeat = e.target.closest('[data-repeat]');
     const attendance = e.target.closest('[data-attendance]');
     const panelLink = e.target.closest('[data-panel-link]');
+    const promoBtn = e.target.closest('[data-promo]');
+    const delPromo = e.target.closest('[data-delete-promo]');
+    if (promoBtn) return openPromo(Number(promoBtn.dataset.promo));
+    const cancelEv = e.target.closest('[data-cancel-event]');
+    if (cancelEv) {
+      const n = Number(cancelEv.dataset.count);
+      if (!confirm(`Cancel “${cancelEv.dataset.name}”?${n ? ` All ${n} ${n === 1 ? 'person' : 'people'} registered will be refunded and notified.` : ''} This cannot be undone.`)) return;
+      const reason = prompt('Reason for cancelling (optional, shown to attendees):', '') ?? '';
+      try { const d = await api(`/events/${cancelEv.dataset.cancelEvent}/cancel`, { method: 'POST', body: { reason } }); toast(d.message, 'success'); await loadOrganizer(); showPanel('organizerEventsPanel'); }
+      catch (err) { toast(err.message, 'error'); }
+      return;
+    }
+    const featureBtn = e.target.closest('[data-feature]');
+    const flashBtn = e.target.closest('[data-flash]');
+    const endFlash = e.target.closest('[data-end-flash]');
+    if (flashBtn) { const f = document.querySelector(`[data-flash-form="${flashBtn.dataset.flash}"]`); f?.classList.toggle('hidden'); f?.querySelector('select')?.focus(); return; }
+    if (featureBtn || endFlash) {
+      try {
+        const d = featureBtn ? await api(`/events/${featureBtn.dataset.feature}/featured`, { method: 'POST', body: { featured: featureBtn.dataset.on !== '1' } })
+          : await api(`/events/${endFlash.dataset.endFlash}/flash-sale`, { method: 'DELETE' });
+        toast(d.message, 'success');
+        await loadOrganizer(); showPanel('organizerEventsPanel'); loadHomePromo(); loadPublicEvents();
+      } catch (err) { toast(err.message, 'error'); }
+      return;
+    }
+    if (delPromo) {
+      try { toast((await api(`/events/${delPromo.dataset.event}/promo-codes/${delPromo.dataset.deletePromo}`, { method: 'DELETE' })).message); await openPromo(Number(delPromo.dataset.event)); }
+      catch (err) { toast(err.message, 'error'); }
+      return;
+    }
     if (editEvent) return startEventEdit(Number(editEvent.dataset.editEvent));
     if (attendance) return openAttendance(Number(attendance.dataset.attendance));
     if (panelLink) return showPanel(panelLink.dataset.panelLink);
@@ -451,6 +601,19 @@
       } else return;
       await loadOrganizer();
     } catch (err) { toast(err.message, 'error'); }
+  });
+
+  $('organizerView').addEventListener('submit', async e => {
+    const form = e.target.closest('[data-flash-form]');
+    if (!form) return;
+    e.preventDefault();
+    const btn = form.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      const d = await api(`/events/${form.dataset.flashForm}/flash-sale`, { method: 'POST', body: { percent: Number(form.percent.value), hours: Number(form.hours.value) } });
+      toast(`⚡ ${d.message}`, 'success');
+      await loadOrganizer(); showPanel('organizerEventsPanel'); loadHomePromo(); loadPublicEvents();
+    } catch (err) { toast(err.message, 'error'); btn.disabled = false; }
   });
 
   // --- photo picker (community and event forms)
@@ -516,7 +679,7 @@
   });
 
   const COMMUNITY_FIELDS = { name: 'communityName', category: 'communityCategory', description: 'communityDescription', story: 'communityStory', town: 'communityTown', address: 'communityAddress', postcode: 'communityPostcode', latitude: 'communityLatitude', longitude: 'communityLongitude' };
-  const EVENT_FIELDS = { community_id: 'eventCommunity', name: 'eventName', event_date: 'eventDate', event_time: 'eventTime', venue: 'eventVenue', description: 'eventDescription', price: 'eventPrice', capacity: 'eventCapacity' };
+  const EVENT_FIELDS = { community_id: 'eventCommunity', name: 'eventName', event_date: 'eventDate', event_time: 'eventTime', venue: 'eventVenue', description: 'eventDescription', price: 'eventPrice', capacity: 'eventCapacity', early_price: 'eventEarlyPrice', early_until: 'eventEarlyUntil', early_limit: 'eventEarlyLimit' };
 
 
   function clearFieldErrors(form) { form.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error')); }
@@ -593,6 +756,9 @@
     $('eventDescription').value = ev.description || '';
     $('eventPrice').value = ev.price_pence ? (ev.price_pence / 100).toFixed(2) : '';
     $('eventCapacity').value = ev.capacity ?? '';
+    $('eventEarlyPrice').value = ev.early_price_pence != null ? (ev.early_price_pence / 100).toFixed(2) : '';
+    $('eventEarlyUntil').value = ev.early_until || '';
+    $('eventEarlyLimit').value = ev.early_limit ?? '';
     eventPhoto.set(ev.image_url);
     setMessage($('eventMessage'), '');
     $('eventName').focus();
@@ -646,13 +812,15 @@
       const { event, attendees } = await api(`/events/${id}/attendees`);
       const came = attendees.filter(a => a.attended).length;
       $('attendanceTitle').textContent = `Attendance — ${event.name}`;
-      $('attendanceIntro').textContent = `${event.community_name} · ${formatDate(event.event_date)} · ${event.event_time}. Tick the people who came; this feeds your analytics.`;
+      $('attendanceIntro').textContent = `${event.community_name} · ${formatDate(event.event_date)} · ${event.event_time}. ${event.has_started ? 'Tick the people who came; this feeds your analytics.' : 'Check-in is open — scan QR tickets at the door or tick people here.'}`;
       box.innerHTML = `<div class="attendance-summary"><div><b id="attCount">${came}</b><small>of ${attendees.length} attended</small></div><div><b>${money(event.revenue_pence)}</b><small>ticket revenue</small></div><div><b>${event.avg_rating ? '★ ' + event.avg_rating : '–'}</b><small>${plural(event.rating_count, 'rating')}</small></div>
+          <div><b>${attendees.filter(a => a.checked_in_by).length}</b><small>checked in by QR</small></div>
+          <a class="outline-btn" href="checkin.html?event=${event.id}">📷 Open QR scanner</a>
           ${attendees.length ? '<button class="outline-btn" type="button" id="markAllBtn">✓ Mark everyone as attended</button>' : ''}</div>
         ${attendees.length ? `<div class="attendance-list">${attendees.map(a => `<label class="attendee${a.attended ? ' is-in' : ''}">
             <input type="checkbox" data-user="${a.user_id}" ${a.attended ? 'checked' : ''}>
-            <span class="attendee-name"><strong>${esc(a.name)}</strong><small>${esc(a.email)}${a.amount_pence ? ' · paid ' + money(a.amount_pence) : ''}</small></span>
-            <span class="attendee-rating">${a.rating ? '★'.repeat(a.rating) : ''}</span></label>`).join('')}</div>`
+            <span class="attendee-name"><strong>${esc(a.name)}</strong><small>${esc(a.email)} · ${a.amount_pence ? `${CC.ticketLabel(a.ticket_type)} · paid ${money(a.amount_pence)}${a.promo_code ? ` (${esc(a.promo_code)})` : ''}` : 'Free'}</small></span>
+            <span class="attendee-rating">${a.checked_in_by ? '<em class="qr-tag">QR ✓</em>' : ''}${a.rating ? '★'.repeat(a.rating) : ''}</span></label>`).join('')}</div>`
           : '<p class="muted">Nobody registered for this event.</p>'}`;
       const update = () => { $('attCount').textContent = box.querySelectorAll('input[data-user]:checked').length; };
       box.querySelectorAll('input[data-user]').forEach(cb => cb.addEventListener('change', async () => {
@@ -667,6 +835,39 @@
         try { toast((await api(`/events/${id}/attendees/all`, { method: 'POST', body: {} })).message, 'success'); await openAttendance(id); }
         catch (err) { toast(err.message, 'error'); }
       });
+    } catch (err) { box.innerHTML = `<p class="muted error-text">${esc(err.message)}</p>`; }
+  }
+
+  // --- promo codes
+  async function openPromo(id) {
+    showPanel('promoPanel');
+    const box = $('promoContent');
+    box.innerHTML = '<p class="muted">Loading promo codes…</p>';
+    try {
+      const ev = state.organizer.events.find(x => x.id === id);
+      const { promo_codes: codes } = await api(`/events/${id}/promo-codes`);
+      $('promoTitle').textContent = `Promo codes — ${ev ? ev.name : 'event'}`;
+      $('promoIntro').textContent = ev ? `${ev.community_name} · ${formatDate(ev.event_date)} · standard ${money(ev.price_pence)}${ev.early_price_pence != null ? ` · early bird ${money(ev.early_price_pence)}` : ''}. Codes take a percentage off the current price.` : '';
+      box.innerHTML = `
+        <form class="promo-create" id="promoCreate" novalidate>
+          <label>Code <input id="promoCode" maxlength="20" placeholder="e.g. STUDENT20" autocomplete="off"></label>
+          <label>% off <input id="promoPercent" type="number" min="5" max="100" step="1" placeholder="20"></label>
+          <label>Max uses <span class="optional">(optional)</span><input id="promoMax" type="number" min="1" step="1" placeholder="Unlimited"></label>
+          <button class="primary-btn" type="submit">Create code</button>
+        </form>
+        <p class="form-message" id="promoMessage" role="status"></p>
+        ${codes.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Code</th><th class="num">Discount</th><th class="num">Used</th><th class="num">Discount given</th><th></th></tr></thead><tbody>
+          ${codes.map(c => `<tr><td><b>${esc(c.code)}</b></td><td class="num">${c.percent_off}%</td><td class="num">${c.uses}${c.max_uses ? ` / ${c.max_uses}` : ''}</td><td class="num">${money(c.discount_given_pence)}</td><td><button class="text-btn danger-link" type="button" data-delete-promo="${c.id}" data-event="${id}">Delete</button></td></tr>`).join('')}
+        </tbody></table></div>` : '<p class="muted">No promo codes yet. Create one above and share it, e.g. on social media or with students.</p>'}`;
+      $('promoCreate').onsubmit = async e => {
+        e.preventDefault();
+        try {
+          const d = await api(`/events/${id}/promo-codes`, { method: 'POST', body: { code: $('promoCode').value, percent_off: $('promoPercent').value, max_uses: $('promoMax').value } });
+          toast(d.message, 'success');
+          await loadOrganizer();
+          await openPromo(id);
+        } catch (err) { setMessage($('promoMessage'), err.message, 'error'); }
+      };
     } catch (err) { box.innerHTML = `<p class="muted error-text">${esc(err.message)}</p>`; }
   }
 
@@ -705,6 +906,20 @@
         ${kpi('Memberships', s.members, `+${thisMonth.new_members} this month`)}
         ${kpi('Upcoming events', s.events_upcoming, `${upcomingBooked} places booked`)}
       </div>
+      ${d.earnings ? `<section class="viz-card viz-wide earnings-card"><header class="table-head"><div><h4>Your earnings &amp; payouts</h4><p>Community Connect collects ticket payments and keeps a ${d.earnings.fee_percent}% platform fee. After each event, the rest is paid out to you.</p></div></header>
+        <div class="kpi-row">
+          ${kpi('Ticket sales', money(d.earnings.gross_pence), `− ${money(d.earnings.fee_pence)} platform fee (${d.earnings.fee_percent}%)`)}
+          ${kpi('Your earnings', money(d.earnings.net_pence), 'after the platform fee')}
+          ${kpi('Paid to you', money(d.earnings.paid_pence), `${money(d.earnings.ready_pence)} ready · ${money(d.earnings.pending_pence)} after upcoming events`)}
+        </div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Event</th><th class="num">Tickets</th><th class="num">Sales</th><th class="num">Platform fee</th><th class="num">You receive</th><th>Status</th></tr></thead>
+        <tbody>${d.earnings.payouts.map(p => `<tr><td>${esc(p.event_name)}<br><small class="muted">${esc(formatDate(p.event_date, { short: true }))}</small></td><td class="num">${p.tickets}</td><td class="num">${money(p.gross_pence)}</td><td class="num">−${money(p.fee_pence)}</td><td class="num"><strong>${money(p.net_pence)}</strong></td><td><span class="status-pill st-${p.status}">${{ pending: 'After the event', ready: 'Being paid', paid: 'Paid' }[p.status]}</span>${p.status === 'paid' && p.reference ? `<br><small class="muted">${esc(p.reference)}</small>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No paid ticket sales yet.</td></tr>'}</tbody></table></div></section>` : ''}
+      <div class="kpi-row kpi-row-v5">
+        ${kpi('QR check-ins', d.qr_checkins || 0, 'tickets scanned at the door')}
+        ${kpi('Friend referrals', d.referral_total || 0, `${money(d.referral_revenue_pence || 0)} from referred friends`)}
+        ${kpi('On waitlists', d.waitlist_total || 0, 'people waiting for a place')}
+      </div>
+      ${(d.referrals || []).length ? `<section class="viz-card viz-wide"><header><h4>Top referrers — “bring a friend”</h4><p>Ticket holders whose invite links brought new bookings.</p></header><div class="table-wrap"><table class="data-table"><thead><tr><th>Referrer</th><th>Event</th><th class="num">Friends booked</th><th class="num">Revenue</th></tr></thead><tbody>${d.referrals.map(r => `<tr><td>${esc(r.referrer)}</td><td>${esc(r.event_name)}</td><td class="num">${r.friends}</td><td class="num">${money(r.revenue_pence)}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
       ${recent.length ? '' : '<div class="empty-inline analytics-empty"><strong>No past events in this period yet</strong><p>Charts fill in once your events have taken place. After an event, open <b>My events → Attendance</b> to record who came.</p></div>'}
       <section class="viz-card viz-wide"><header><h4>Registered vs attended — past events</h4><p>Each pair of bars is one event. The gap shows people who registered but didn't come.</p></header><div id="chartPerEvent"></div></section>
       <div class="viz-grid">
@@ -712,6 +927,10 @@
         <section class="viz-card"><header><h4>Attendance by month</h4><p>Registrations and actual attendance, by event month.</p></header><div id="chartMonthly"></div></section>
         <section class="viz-card"><header><h4>Member growth</h4><p>Total memberships across your communities.</p></header><div id="chartMembers"></div></section>
         <section class="viz-card"><header><h4>Revenue by community</h4><p>All ticket revenue, with each community's attendance rate.</p></header><div id="chartCommunity"></div></section>
+      </div>
+      <div class="viz-grid">
+        <section class="viz-card"><header><h4>Ticket sales by type</h4><p>Revenue from early-bird and standard tickets, with tickets sold.</p></header><div id="chartTicketTypes"></div></section>
+        <section class="viz-card"><header><h4>Promo codes used</h4><p>Which codes brought in sales, and the discount given.</p></header><div id="chartPromos"></div></section>
       </div>
       <section class="viz-card viz-wide"><header><h4>Upcoming events — places booked</h4><p>How full each upcoming event is.</p></header><div id="chartUpcoming"></div></section>
       <section class="viz-card viz-wide"><header class="table-head"><div><h4>All past events</h4><p>The data behind the charts.</p></div><button class="outline-btn" type="button" id="exportCsv">⬇ Download CSV</button></header>
@@ -762,6 +981,20 @@
       tooltip: i => `${d.upcoming[i].registered} booked${d.upcoming[i].capacity ? ` of ${d.upcoming[i].capacity}` : ''} · ${money(d.upcoming[i].revenue_pence)} booked revenue`,
       ariaLabel: 'Places booked for upcoming events'
     }); else $('chartUpcoming').innerHTML = '<p class="muted viz-empty">No upcoming events. Use “Run again” on a past event to schedule one in one click.</p>';
+
+    const types = (d.sales_by_type || []).filter(t => t.ticket_type !== 'free' || t.tickets);
+    if (types.length) CCCharts.hbars($('chartTicketTypes'), {
+      labels: types.map(t => CC.ticketLabel(t.ticket_type)), values: types.map(t => t.revenue_pence),
+      max: Math.max(1, ...types.map(t => t.revenue_pence)), format: p => money(p),
+      sub: i => `${types[i].tickets} tickets${types[i].discount_pence ? ` · ${money(types[i].discount_pence)} promo discount` : ''}`,
+      tooltip: i => `${types[i].tickets} tickets · ${money(types[i].revenue_pence)} revenue`, ariaLabel: 'Revenue by ticket type'
+    }); else $('chartTicketTypes').innerHTML = '<p class="muted viz-empty">No ticket sales yet.</p>';
+    const promos = (d.promo_usage || []).slice(0, 6);
+    if (promos.length) CCCharts.hbars($('chartPromos'), {
+      labels: promos.map(p => `${p.code} · ${p.event_name}`), values: promos.map(p => p.uses), color: '--series-2',
+      format: v => `${v} used`, sub: i => `${money(promos[i].revenue_pence)} sales · −${money(promos[i].discount_pence)}`,
+      tooltip: i => `${promos[i].uses} tickets with ${promos[i].code} · ${money(promos[i].revenue_pence)} revenue · ${money(promos[i].discount_pence)} discount`, ariaLabel: 'Promo code usage'
+    }); else $('chartPromos').innerHTML = '<p class="muted viz-empty">No promo codes used yet. Create one from My events → Promo codes.</p>';
 
     $('exportCsv').onclick = () => {
       const rows = [['Event', 'Date', 'Community', 'Registered', 'Attended', 'Attendance %', 'Revenue (GBP)', 'Average rating']]

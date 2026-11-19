@@ -55,7 +55,46 @@ function startFakeGeocoder() {
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({ url: `http://127.0.0.1:${server.address().port}`, calls, close: () => new Promise(r => server.close(r)) })));
 }
 
+/** Fake Stripe API (Checkout Sessions only) so the Stripe code path is tested without real money. */
+function startFakeStripe() {
+  const sessions = new Map();
+  const requests = [];
+  let n = 0;
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', () => {
+      const send = (status, obj) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+      if (req.headers.authorization !== 'Bearer sk_test_fake') return send(401, { error: { message: 'Invalid API key' } });
+      const u = new URL(req.url, 'http://x');
+      if (req.method === 'POST' && u.pathname === '/v1/checkout/sessions') {
+        const form = Object.fromEntries(new URLSearchParams(body));
+        requests.push(form);
+        const id = `cs_test_${++n}`;
+        const session = { id, url: `https://checkout.stripe.test/pay/${id}`, payment_status: 'unpaid', amount_total: Number(form['line_items[0][price_data][unit_amount]']),
+          metadata: { event_id: form['metadata[event_id]'], user_id: form['metadata[user_id]'] } };
+        sessions.set(id, session);
+        return send(200, session);
+      }
+      const m = /^\/v1\/checkout\/sessions\/(.+)$/.exec(u.pathname);
+      if (req.method === 'GET' && m && sessions.has(m[1])) return send(200, sessions.get(m[1]));
+      send(404, { error: { message: 'No such session' } });
+    });
+  });
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({
+    url: `http://127.0.0.1:${server.address().port}`, requests, sessions,
+    markPaid: id => { sessions.get(id).payment_status = 'paid'; },
+    close: () => new Promise(r => server.close(r))
+  })));
+}
+
 function tempDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'cc-test-')); }
+
+/** Deletes a temporary test folder. On Windows a just-closed database can stay locked for a moment, so retry and never fail a test over clean-up. */
+function removeDir(dir) {
+  try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
+  catch (err) { console.warn(`(could not remove temporary folder ${dir}: ${err.code}) — safe to ignore`); }
+}
 
 function freePort() {
   return new Promise(resolve => { const s = http.createServer(); s.listen(0, () => { const p = s.address().port; s.close(() => resolve(p)); }); });
@@ -113,4 +152,4 @@ function isoDate(days) {
 // A real 1×1 PNG.
 const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
-module.exports = { startFakeGeocoder, startServer, client, tempDir, isoDate, PNG_1PX, ROOT };
+module.exports = { startFakeStripe, startFakeGeocoder, startServer, client, tempDir, removeDir, isoDate, PNG_1PX, ROOT };

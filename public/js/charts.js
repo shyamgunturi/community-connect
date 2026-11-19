@@ -47,7 +47,7 @@
     let lastW = 0;
     const render = () => {
       const w = Math.round(el.clientWidth);
-      if (!w || w === lastW) return;
+      if (w < 160 || w === lastW) return; // container hidden or still laying out — draw when it has room
       lastW = w;
       el.innerHTML = '';
       draw(w);

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ticket check-in | Community Connect</title><meta name="robots" content="noindex"><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="detail-pages.css"><link rel="stylesheet" href="v5.css"></head>
+<body><header class="site-header"><a class="brand" href="index.html"><span class="brand-mark">C</span><span>Community<span class="brand-light">Connect</span></span></a><nav class="top-nav" aria-label="Main navigation"><a href="index.html#organizer">Organizer dashboard</a><a href="index.html#events">Events</a></nav><div class="header-account" id="detailAccount"></div></header>
+<main class="detail-shell checkin-shell">
+  <section class="detail-card"><div class="detail-body">
+    <p class="eyebrow">DOOR CHECK-IN</p>
+    <h1>Scan tickets</h1>
+    <p class="detail-description">Scan the QR code on a participant's e-ticket to check them in. Attendance is saved straight to your analytics. You can also scan with your phone's camera app — the code opens this page.</p>
+
+    <div id="checkinLogin" class="checkin-login hidden">
+      <h2>Organizer log in</h2>
+      <p class="muted">Only the organizer of the event can check tickets in.</p>
+      <form id="checkinLoginForm" novalidate>
+        <label>Email <input id="ciEmail" type="email" autocomplete="email" required maxlength="254"></label>
+        <label>Password <input id="ciPassword" type="password" autocomplete="current-password" required maxlength="128"></label>
+        <button class="primary-btn" type="submit" id="ciLoginBtn">Log in</button>
+        <p class="form-message" id="ciLoginMsg" role="alert"></p>
+        <div class="google-block hidden" data-google-block><div class="or-divider">or</div><div class="google-slot" id="ciGoogle"></div></div>
+      </form>
+    </div>
+
+    <div id="checkinTools" class="hidden">
+      <div class="checkin-result hidden" id="checkinResult" role="status" aria-live="assertive"></div>
+      <div class="checkin-grid">
+        <div class="scanner-box">
+          <div class="scanner-frame" id="scannerFrame"><video id="scanVideo" playsinline muted></video><span class="scanner-target" aria-hidden="true"></span><p class="scanner-idle" id="scannerIdle">Camera is off</p></div>
+          <div class="detail-actions"><button class="primary-btn" type="button" id="startScan">📷 Start camera scanner</button><button class="outline-btn hidden" type="button" id="stopScan">Stop camera</button></div>
+          <p class="muted" id="scanSupport"></p>
+        </div>
+        <div class="manual-box">
+          <h2>Or enter the ticket code</h2>
+          <form id="manualForm" class="promo-row" novalidate><input id="manualCode" placeholder="e.g. 3f9a…" maxlength="200" autocomplete="off" aria-label="Ticket code or link"><button class="outline-btn" type="submit">Check in</button></form>
+          <p class="muted">The 24-character code is printed under the QR code on every ticket. You can paste the whole link too.</p>
+          <label class="event-pick">Event <select id="eventPick"><option value="">Choose one of your events…</option></select></label>
+          <div id="eventStats" class="checkin-stats"></div>
+          <div id="recentList" class="recent-list"></div>
+        </div>
+      </div>
+    </div>
+  </div></section>
+</main>
+<footer><a class="brand footer-brand" href="index.html"><span class="brand-mark">C</span><span>Community<span class="brand-light">Connect</span></span></a><p>A more connected world starts with finding your people.</p><small>Discover openly. Connect meaningfully.</small></footer>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="js/common.js"></script><script src="js/qr.js"></script><script src="js/extras.js"></script><script src="js/detail-shared.js"></script><script src="js/checkin-page.js"></script></body></html>

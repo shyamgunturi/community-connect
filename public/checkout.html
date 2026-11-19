@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Checkout | Community Connect</title><meta name="robots" content="noindex"><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="detail-pages.css"><link rel="stylesheet" href="v5.css"></head>
+<body><header class="site-header"><a class="brand" href="index.html"><span class="brand-mark">C</span><span>Community<span class="brand-light">Connect</span></span></a><nav class="top-nav" aria-label="Main navigation"><a href="index.html#discover">Explore communities</a><a href="index.html#events">Events</a></nav><div class="header-account" id="detailAccount"></div></header>
+<main class="detail-shell checkout-shell">
+  <div class="demo-banner" id="demoBanner"><strong>Demo checkout — no real money is taken.</strong> Use the test card <code>4242 4242 4242 4242</code>, any future expiry (e.g. 12/30) and any 3-digit code. <code>4000 0000 0000 0002</code> shows a declined card.</div>
+  <div class="checkout-grid">
+    <section class="detail-card checkout-summary" id="orderSummary" aria-live="polite"><div class="detail-body"><p class="eyebrow">YOUR ORDER</p><h1>Loading…</h1></div></section>
+    <section class="detail-card checkout-pay">
+      <div class="detail-body">
+        <p class="eyebrow">PAYMENT</p><h2>Pay by card</h2>
+        <p class="hold-timer" id="holdTimer"></p>
+        <form id="cardForm" class="card-form" novalidate autocomplete="off">
+          <label>Name on card <input id="cardName" maxlength="80" placeholder="e.g. Priya Patel"></label>
+          <label>Card number <input id="cardNumber" inputmode="numeric" maxlength="23" placeholder="4242 4242 4242 4242"></label>
+          <div class="card-row"><label>Expiry <input id="cardExpiry" inputmode="numeric" maxlength="5" placeholder="MM/YY"></label><label>Security code <input id="cardCvc" inputmode="numeric" maxlength="4" placeholder="123"></label></div>
+          <button class="primary-btn pay-btn" type="submit" id="payBtn">Pay</button>
+          <p class="form-message" id="payMessage" role="alert"></p>
+        </form>
+        <p class="pay-note">🔒 Card details are only checked, never stored. <a href="#" id="cancelOrder">Cancel and release my place</a></p>
+      </div>
+    </section>
+  </div>
+</main>
+<footer><a class="brand footer-brand" href="index.html"><span class="brand-mark">C</span><span>Community<span class="brand-light">Connect</span></span></a><p>A more connected world starts with finding your people.</p><small>Discover openly. Connect meaningfully.</small></footer>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="js/common.js"></script><script src="js/qr.js"></script><script src="js/extras.js"></script><script src="js/detail-shared.js"></script><script src="js/checkout-page.js"></script></body></html>

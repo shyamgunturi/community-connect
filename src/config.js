@@ -29,6 +29,10 @@ function loadEnvFile(file) {
 
 loadEnvFile(path.join(ROOT, '.env'));
 
+// Event dates and early-bird deadlines are UK local times. Hosting servers (e.g. Render) run on UTC,
+// so default the process time zone to London unless TZ is set explicitly.
+if (!process.env.TZ) process.env.TZ = 'Europe/London';
+
 const env = process.env;
 const isProduction = env.NODE_ENV === 'production';
 
@@ -81,8 +85,24 @@ const config = {
   bcryptRounds: Math.min(Math.max(Number(env.BCRYPT_ROUNDS) || 12, 10), 14),
   seedDemoData: env.SEED_DEMO_DATA !== 'false',
   seedOrganizerPassword: env.SEED_ORGANIZER_PASSWORD || '',
+  // Platform admin + commission (platform fee kept from every paid ticket; the rest is paid out to the organizer after the event)
+  adminEmail: (env.ADMIN_EMAIL || 'admin@communityconnect.local').trim().toLowerCase(),
+  adminPassword: env.ADMIN_PASSWORD || '',
+  platformFeePercent: String(env.PLATFORM_FEE_PERCENT ?? '').trim() === '' ? 10 : (Math.min(50, Math.max(0, Math.round(Number(env.PLATFORM_FEE_PERCENT)))) || 0),
+  // Continue with Google (optional): create an OAuth Client ID at console.cloud.google.com
+  googleClientId: (env.GOOGLE_CLIENT_ID || '').trim(),
+  googleTokenInfoUrl: env.GOOGLE_TOKENINFO_URL || 'https://oauth2.googleapis.com/tokeninfo',
   maxUploadBytes: (Number(env.MAX_UPLOAD_MB) || 4) * 1024 * 1024,
   trustProxy: env.TRUST_PROXY === 'true',
+  publicUrl: (env.PUBLIC_URL || '').replace(/\/$/, ''),
+  payments: {
+    // "stripe" when a Stripe secret key is configured, otherwise "demo" (built-in test checkout, no real money).
+    mode: env.STRIPE_SECRET_KEY ? 'stripe' : 'demo',
+    stripeSecretKey: env.STRIPE_SECRET_KEY || '',
+    stripeApiUrl: (env.STRIPE_API_URL || 'https://api.stripe.com').replace(/\/$/, ''),
+    currency: 'gbp',
+    holdMinutes: Number(env.PAYMENT_HOLD_MINUTES) || 30
+  },
   geocoder: {
     postcodesUrl: (env.POSTCODES_API_URL || 'https://api.postcodes.io').replace(/\/$/, ''),
     nominatimUrl: (env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org').replace(/\/$/, ''),

@@ -5,14 +5,15 @@ function securityHeaders(req, res, next) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'geolocation=(self), camera=(), microphone=()');
+  res.setHeader('Permissions-Policy', 'geolocation=(self), camera=(self), microphone=()');
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
     "img-src 'self' https: data: blob:",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
     "font-src 'self' https://fonts.gstatic.com",
-    "script-src 'self'",
-    "connect-src 'self'",
+    "script-src 'self' https://accounts.google.com/gsi/client",
+    "frame-src https://accounts.google.com",
+    "connect-src 'self' https://accounts.google.com/gsi/",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'"
